@@ -11,7 +11,7 @@ import SwiftUI
 struct planitApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AppRoot()
         }
     }
 }

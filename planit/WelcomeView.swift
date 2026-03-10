@@ -8,28 +8,40 @@
 import SwiftUI
 
 struct WelcomeView: View {
-    @State private var username = "Kore" //TODO figure out how to access the real username
+    var username: String = "Kore" // default for previews
+    var onMaybeLater: (() -> Void)? = nil
+
     var body: some View {
-        Spacer()
-        Text("Welcome, \(username)! Are you ready to plan your first event?")
-            .multilineTextAlignment(.center)
-            .font(.title)
-            .bold()
-            .padding(.horizontal)
-            .foregroundStyle(Color.accent)
-        Button("Let's do it!"){
-            //TODO figure out page nav
+        VStack {
+            Spacer()
+            Text("Welcome, \(username)! Are you ready to plan your first event?")
+                .multilineTextAlignment(.center)
+                .font(.title)
+                .bold()
+                .padding(.horizontal)
+                .foregroundStyle(Color.accentColor)
+            Button("Let's do it!"){
+                //TODO figure out page nav
+            }
+                .buttonStyle(.borderedProminent)
+               .font(.title3)
+               .padding(.bottom,5)
+            Button(action: {
+                // Use the provided closure to let the parent decide navigation
+                onMaybeLater?()
+            }) {
+                Text("Maybe later...")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.secondary.opacity(0.2))
+                    .foregroundColor(.primary)
+                    .cornerRadius(8)
+            }
+            Spacer()
         }
-            .buttonStyle(.borderedProminent)
-           .font(.title3)
-           .padding(.bottom,5)
-        Button("Maybe later..."){
-            //TODO figure out page nav
-        }
-        Spacer()
     }
 }
 
 #Preview {
-    WelcomeView()
+    WelcomeView(username: "Kore")
 }

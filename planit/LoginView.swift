@@ -8,16 +8,20 @@
 import SwiftUI
 
 struct LoginView: View {
-    //TODO figure out what to do with these vars
+    // Allow the parent to provide a handler when login succeeds
+    var onLogin: ((String) -> Void)? = nil
+
     @State public var username = ""
     @State public var password = ""
+    @State private var showError = false
+
     var body: some View {
         VStack {
             Spacer()
             Text("PlanIt")
                 .font(.largeTitle)
                 .fontWeight(.semibold)
-                .foregroundColor(Color.accent)
+                .foregroundColor(Color.accentColor)
             TextField("username", text: $username)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .frame(width: 240)
@@ -25,7 +29,7 @@ struct LoginView: View {
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.gray, lineWidth: 1)
                 )
-            TextField("password", text: $password)
+            SecureField("password", text: $password)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .frame(width: 240)
                 .overlay(
@@ -33,11 +37,33 @@ struct LoginView: View {
                         .stroke(Color.gray, lineWidth: 1)
                 )
                 .padding(8)
-            //TODO figure out page nav
+
+            Button("Log In") {
+                // Basic validation: require non-empty username/password
+                if username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty {
+                    showError = true
+                } else {
+                    showError = false
+                    // call the provided handler so the root can navigate
+                    onLogin?(username)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 8)
+
+            if showError {
+                Text("Please enter username and password")
+                    .foregroundColor(.red)
+                    .font(.footnote)
+            }
+
+            //TODO figure out page nav for 'Create account'
             Button("Don't have an account yet? Create one!"){
-                //TODO figure out page nav
+                //TODO present create-account flow
             }
                 .font(.footnote)
+                .padding(.top, 6)
+
             Spacer()
         }
         .padding()
