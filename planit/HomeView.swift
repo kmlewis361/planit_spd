@@ -8,7 +8,9 @@
 import SwiftUI
 
 struct HomeView: View {
-    @State private var events: [Event] = []
+    
+    @State var event = Event(name: "Birthday Party", duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State var events: [Event] = [Event(name: "Birthday Party", duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
     var body: some View {
         VStack{
             ForEach(events) { event in
