@@ -4,6 +4,7 @@ import SwiftUI
 enum Route: Hashable {
     case welcome(username: String)
     case home
+//    case eventDetail(event: Event)
     // add more cases for additional screens as needed
 }
 
@@ -14,19 +15,30 @@ struct AppRoot: View {
         NavigationStack(path: $path) {
             // Initial view is the LoginView. When the login completes we append a route to the path.
             LoginView(onLogin: { username in
-                // Push the welcome screen and pass the username
+                // Clear any existing path and push the welcome screen as the only destination
                 path.removeLast(path.count)
                 path.append(Route.welcome(username: username))
             })
+            
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .welcome(let username):
+                    // When the user taps "Maybe later..." the closure below will clear the stack
+                    // and append .home so HomeView becomes the root of the navigation stack.
                     WelcomeView(username: username, onMaybeLater: {
                         path.removeLast(path.count)
-                        path.append(.home)
+                        path.append(Route.home)
                     })
-                case .home:
-                    ContentView()
+                case .home():
+                    // Ensure .home explicitly maps to HomeView
+                    HomeView(onSeeDetails:{_ in
+                        
+                        path.removeLast(path.count)
+                        path.append(Route.welcome(username:event.name))
+                    })
+                    
+//                case .eventDetail(let event):
+//                    EventDetailsView(event: event)
                 }
             }
         }
