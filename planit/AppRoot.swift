@@ -4,43 +4,40 @@ import SwiftUI
 enum Route: Hashable {
     case welcome(username: String)
     case home
-//    case eventDetail(event: Event)
-    // add more cases for additional screens as needed
+    case details(eventId: UUID)
 }
 
 struct AppRoot: View {
     @State private var path = NavigationPath()
+    @State private var isLoggedIn: Bool = false
+    @State private var username: String? = nil
+    @State private var initialRoute: Route? = nil
 
     var body: some View {
-        NavigationStack(path: $path) {
-            // Initial view is the LoginView. When the login completes we append a route to the path.
-            LoginView(onLogin: { username in
-                // Clear any existing path and push the welcome screen as the only destination
-                path.removeLast(path.count)
-                path.append(Route.welcome(username: username))
-            })
-            
-            .navigationDestination(for: Route.self) { route in
-                switch route {
-                case .welcome(let username):
-                    // When the user taps "Maybe later..." the closure below will clear the stack
-                    // and append .home so HomeView becomes the root of the navigation stack.
-                    WelcomeView(username: username, onMaybeLater: {
-                        path.removeLast(path.count)
-                        path.append(Route.home)
-                    })
-                case .home():
-                    // Ensure .home explicitly maps to HomeView
-                    HomeView(onSeeDetails:{_ in
-                        
-                        path.removeLast(path.count)
-                        path.append(Route.welcome(username:event.name))
-                    })
-                    
-//                case .eventDetail(let event):
-//                    EventDetailsView(event: event)
-                }
+        Group {
+            if !isLoggedIn {
+                // Show the login screen as the app root when logged out.
+                LoginView(onLogin: { name in
+                    print("AppRoot: onLogin called with username=\(name)")
+                    // Queue the initial route and switch to the logged-in navigation stack.
+                    // Do all state mutations asynchronously to avoid changing state during view updates.
+                    DispatchQueue.main.async {
+                        username = name
+                        initialRoute = .welcome(username: name)
+                        isLoggedIn = true
+                    }
+                })
+            } else {
+                // Delegate the logged-in navigation to LoggedInView so all .navigationDestination modifiers
+                // are attached while a NavigationStack is present (avoids runtime warnings).
+                LoggedInView(path: $path, initialRoute: $initialRoute, username: username ?? "")
             }
+        }
+        .onChange(of: isLoggedIn) { new in
+            print("AppRoot: isLoggedIn changed -> \(new)")
+        }
+        .onChange(of: path) { newPath in
+            print("AppRoot: path changed, count=\(newPath.count)")
         }
     }
 }

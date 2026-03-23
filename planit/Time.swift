@@ -6,7 +6,8 @@
 //
 import Foundation
 
-struct Time{
+struct Time: Codable, Identifiable {
+    let id = UUID()
     var startTime: Date
     var endTime: Date
 }

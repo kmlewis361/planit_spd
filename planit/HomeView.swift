@@ -8,21 +8,34 @@
 import SwiftUI
 
 struct HomeView: View {
-    var onSeeDetails: ((Event) -> Void)? = nil
+    var onSeeDetails: ((UUID) -> Void)? = nil
     @State private var events: [Event] = [Event(name: "Birthday Party", duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: []), Event(name: "Brunch", duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
     var body: some View {
         VStack {
             ForEach(events) { event in
-                HStack {
-                    Text(event.name)
-                    Spacer()
-                    Button(action: {
-                        onSeeDetails?(event)
-                    }) {
-                        Text("See details")
+                // If a navigation handler is provided, call it. Otherwise make the row a NavigationLink
+                if let handler = onSeeDetails {
+                    HStack {
+                        Text(event.name)
+                        Spacer()
+                        Button(action: {
+                            handler(event.id)
+                        }) {
+                            Text("See details")
+                        }
+                    }
+                    .padding(.vertical, 6)
+                } else {
+                    NavigationLink(destination: EventDetailsView(eventId: event.id)) {
+                        HStack {
+                            Text(event.name)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.vertical, 6)
                     }
                 }
-                .padding(.vertical, 6)
             }
             Spacer()
         }
@@ -31,5 +44,7 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView()
+    NavigationStack {
+        HomeView()
+    }
 }

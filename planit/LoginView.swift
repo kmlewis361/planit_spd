@@ -45,7 +45,11 @@ struct LoginView: View {
                 } else {
                     showError = false
                     // call the provided handler so the root can navigate
-                    onLogin?(username)
+                    // Dispatch asynchronously to avoid mutating parent state during view updates
+                    print("LoginView: successful login for username=\(username)")
+                    DispatchQueue.main.async {
+                        onLogin?(username)
+                    }
                 }
             }
             .buttonStyle(.borderedProminent)
