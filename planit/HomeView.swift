@@ -19,6 +19,7 @@ struct HomeView: View {
                         Text(event.name)
                         Spacer()
                         Button(action: {
+                            print("HomeView: See details tapped for event=\(event.name)")
                             handler(event.id)
                         }) {
                             Text("See details")
@@ -40,6 +41,9 @@ struct HomeView: View {
             Spacer()
         }
         .padding()
+        .onAppear {
+            print("HomeView: onAppear; events count=\(events.count)")
+        }
     }
 }
 

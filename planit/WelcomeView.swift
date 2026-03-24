@@ -22,12 +22,14 @@ struct WelcomeView: View {
                 .foregroundStyle(Color.accentColor)
             Button("Let's do it!"){
                 //TODO figure out page nav
+                print("WelcomeView: Let's do it tapped")
             }
                 .buttonStyle(.borderedProminent)
                .font(.title3)
                .padding(.bottom,5)
             Button(action: {
                 // Use the provided closure to let the parent decide navigation
+                print("User chose maybe later (WelcomeView)")
                 onMaybeLater?()
             }) {
                 Text("Maybe later...")
@@ -38,6 +40,9 @@ struct WelcomeView: View {
                     .cornerRadius(8)
             }
             Spacer()
+        }
+        .onAppear {
+            print("WelcomeView: onAppear for username=\(username)")
         }
     }
 }
