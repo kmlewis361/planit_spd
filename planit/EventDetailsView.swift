@@ -10,6 +10,7 @@ import SwiftUI
 struct EventDetailsView: View {
 //    var event: Event = Event(name: "Blank Event", duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     var eventId: UUID = UUID()
+    var username: String = ""
     var body: some View {
         Text(eventId.uuidString)
     }
