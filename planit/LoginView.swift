@@ -9,7 +9,7 @@ import SwiftUI
 
 struct LoginView: View {
     // Allow the parent to provide a handler when login succeeds
-    var onLogin: ((String) -> Void)? = nil
+    var onLogin: (() -> Void)? = nil
 
     @State public var username = ""
     @State public var password = ""
@@ -40,6 +40,7 @@ struct LoginView: View {
 
             Button("Log In") {
                 // Basic validation: require non-empty username/password
+                globalUsername = username
                 if username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty {
                     showError = true
                 } else {
@@ -47,7 +48,7 @@ struct LoginView: View {
                     // call the provided handler so the root can navigate
                     // Dispatch asynchronously to avoid mutating parent state during view updates
                     print("LoginView: successful login for username=\(username)")
-                    onLogin?(username)
+                    onLogin?()
                 }
             }
             .buttonStyle(.borderedProminent)

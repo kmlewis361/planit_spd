@@ -8,13 +8,12 @@
 import SwiftUI
 
 struct WelcomeView: View {
-    var username: String = "Kore" // default for previews
     var onMaybeLater: (() -> Void)? = nil
 
     var body: some View {
         VStack {
             Spacer()
-            Text("Welcome, \(username)! Are you ready to plan your first event?")
+            Text("Welcome, \(globalUsername)! Are you ready to plan your first event?")
                 .multilineTextAlignment(.center)
                 .font(.title)
                 .bold()
@@ -41,12 +40,9 @@ struct WelcomeView: View {
             }
             Spacer()
         }
-        .onAppear {
-            print("WelcomeView: onAppear for username=\(username)")
-        }
     }
 }
 
 #Preview {
-    WelcomeView(username: "Kore")
+    WelcomeView()
 }
