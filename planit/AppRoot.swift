@@ -1,17 +1,12 @@
-//
-//  AppRoot.swift
-//  planit
-//
-//  Created by Elise Wong-McBride on 3/10/26.
-//
-
 import SwiftUI
 
 // Centralized route enum so we can navigate to multiple destinations programmatically
 enum Route: Hashable {
     case welcome(username: String)
     case home
-    case details(eventId: UUID)
+    case eventDetails(eventId: UUID)
+//    case eventDetail(event: Event)
+    // add more cases for additional screens as needed
 }
 
 struct AppRoot: View {
@@ -19,31 +14,32 @@ struct AppRoot: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            // Keep LoginView as the root of the stack so pushing WelcomeView leaves Login in history.
+            // Initial view is the LoginView. When the login completes we append a route to the path.
             LoginView(onLogin: { username in
-                            // Push the welcome screen and pass the username
-                            // Clear any existing path and push the welcome screen as the only destination
-                            path.removeLast(path.count)
-                            path.append(Route.welcome(username: username))
-                        })
-        }
-        .navigationDestination(for: Route.self) { route in
-            switch route {
-            case .welcome(let name):
-                WelcomeView(username: name, onMaybeLater: {
-                    // Navigate to the home route from WelcomeView
-                    path.append(Route.home)
-                })
-                .navigationBarBackButtonHidden(false)
-
-            case .home:
-                HomeView(onSeeDetails: { eventId in
-                    path.append(Route.details(eventId: eventId))
-                })
-                .navigationBarBackButtonHidden(false)
-
-            case .details(let eventId):
-                EventDetailsView(eventId: eventId)
+                // Clear any existing path and push the welcome screen as the only destination
+                path.removeLast(path.count)
+                path.append(Route.welcome(username: username))
+            })
+            
+            
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .welcome(let username):
+                    // When the user taps "Maybe later..." the closure below will clear the stack
+                    // and append .home so HomeView becomes the root of the navigation stack.
+                    WelcomeView(username: username, onMaybeLater: {
+                        path.removeLast(path.count)
+                        path.append(Route.home)
+                    })
+                case .home:
+                    // Ensure .home explicitly maps to HomeView
+                    HomeView(onSeeDetails: { eventId in
+                        path.append(Route.eventDetails(eventId: eventId))
+                    })
+                    
+                case .eventDetails(let eventId):
+                    EventDetailsView(eventId: eventId)
+                }
             }
         }
     }
