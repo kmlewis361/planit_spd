@@ -7,8 +7,7 @@ enum Route: Hashable {
     case login
     case home
     case eventDetails(eventId: UUID)
-//    case eventDetail(event: Event)
-    // add more cases for additional screens as needed
+    case eventCreation
 }
 
 struct AppRoot: View {
@@ -20,7 +19,8 @@ struct AppRoot: View {
                 path.append(Route.eventDetails(eventId: eventId))
             }, onLoggedOut: {
                 path.append(Route.login)
-            })
+            }, onCreateEvent:{path.append(Route.eventCreation)
+                print("AppRoot: navigating to event creation")})
 
             
             
@@ -44,10 +44,14 @@ struct AppRoot: View {
                 case .home:
                     HomeView(onSeeDetails: { eventId in
                         path.append(Route.eventDetails(eventId: eventId))
-                    })
+                    }, onCreateEvent:{path.append(Route.eventCreation)
+                    print("AppRoot: navigating to event creation")})
                 case .eventDetails(let eventId):
                     EventDetailsView(eventId: eventId)
+                case.eventCreation:
+                    EventCreationView()
                 }
+            
             }
         }
     }

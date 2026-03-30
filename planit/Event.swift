@@ -11,6 +11,8 @@ struct Event: Identifiable{
     let id = UUID()
     
     var name: String
+    var description: String
+    var invitees: [String]
     var duration: TimeInterval
     var bestTime: Time
 //    var bestLocation: String
