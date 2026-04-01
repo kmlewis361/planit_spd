@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct WelcomeView: View {
+    var onDoIt: (() -> Void)? = nil
     var onMaybeLater: (() -> Void)? = nil
 
     var body: some View {
@@ -20,8 +21,7 @@ struct WelcomeView: View {
                 .padding(.horizontal)
                 .foregroundStyle(Color.accentColor)
             Button("Let's do it!"){
-                //TODO figure out page nav
-                print("WelcomeView: Let's do it tapped")
+               onDoIt?()
             }
                 .buttonStyle(.borderedProminent)
                .font(.title3)

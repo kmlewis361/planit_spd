@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
+    var onRespond: ((UUID) -> Void)? = nil
     var onSeeDetails: ((UUID) -> Void)? = nil
     var onLoggedOut: (()-> Void)? = nil
     var onCreateEvent: (()-> Void)? = nil
@@ -20,13 +21,19 @@ struct HomeView: View {
         
         VStack {
             ForEach(events) { event in
-                HStack {
+                VStack{
                     Text(event.name)
-                    Spacer()
-                    Button(action: {
-                        onSeeDetails?(event.id)
-                    }) {
-                        Text("See details")
+                        .font(.title2)
+                    HStack {
+                        Spacer()
+                        Button("Respond"){
+                            onRespond?(event.id)
+                        }
+                        Spacer()
+                        Button("See details"){
+                            onSeeDetails?(event.id)
+                        }
+                        Spacer()
                     }
                 }
                 .padding(.vertical, 6)

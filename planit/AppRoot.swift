@@ -8,6 +8,7 @@ enum Route: Hashable {
     case home
     case eventDetails(eventId: UUID)
     case eventCreation
+    case eventResponse(eventId: UUID)
 }
 
 struct AppRoot: View {
@@ -15,7 +16,9 @@ struct AppRoot: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            HomeView(onSeeDetails: { eventId in
+            HomeView(onRespond: {eventId in
+                path.append(Route.eventResponse(eventId: eventId))
+            },onSeeDetails: { eventId in
                 path.append(Route.eventDetails(eventId: eventId))
             }, onLoggedOut: {
                 path.append(Route.login)
@@ -29,7 +32,10 @@ struct AppRoot: View {
                 case .welcome:
                     // When the user taps "Maybe later..." the closure below will clear the stack
                     // and append .home so HomeView becomes the root of the navigation stack.
-                    WelcomeView(onMaybeLater: {
+                    WelcomeView(onDoIt: {
+                        path.removeLast(path.count)
+                        path.append(Route.eventCreation)
+                    }, onMaybeLater: {
                         path.removeLast(path.count)
                         path.removeLast(path.count)
                        
@@ -38,18 +44,22 @@ struct AppRoot: View {
                     LoginView(onLogin: {
                                 path.removeLast(path.count)
                                 path.append(Route.welcome)
-                                
                     })
                     .navigationBarBackButtonHidden(true)
                 case .home:
                     HomeView(onSeeDetails: { eventId in
+                        path.removeLast(path.count)
                         path.append(Route.eventDetails(eventId: eventId))
                     }, onCreateEvent:{path.append(Route.eventCreation)
                     print("AppRoot: navigating to event creation")})
                 case .eventDetails(let eventId):
                     EventDetailsView(eventId: eventId)
                 case.eventCreation:
-                    EventCreationView()
+                    EventCreationView(onSend: {
+                        path.removeLast(path.count)})
+                case .eventResponse(let eventId):
+                    EventResponseView(eventId: eventId, onSubmit: {path.removeLast(path.count)
+                        path.append(Route.eventDetails(eventId: eventId))})
                 }
             
             }
