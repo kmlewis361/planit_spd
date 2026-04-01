@@ -25,7 +25,8 @@ struct WelcomeView: View {
             }
                 .buttonStyle(.borderedProminent)
                .font(.title3)
-               .padding(.bottom,5)
+             
+            
             Button(action: {
                 // Use the provided closure to let the parent decide navigation
                 print("User chose maybe later (WelcomeView)")
@@ -33,8 +34,6 @@ struct WelcomeView: View {
             }) {
                 Text("Maybe later...")
                     .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.secondary.opacity(0.2))
                     .foregroundColor(.primary)
                     .cornerRadius(8)
             }
