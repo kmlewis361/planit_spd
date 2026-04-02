@@ -1,12 +1,12 @@
 import SwiftUI
-
+var events: [Event] = [Event(name: "Birthday Party", description: "a party?", invitees: ["Kathy", "Stacy"], duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: []), Event(name: "Brunch",  description: "casual brunch", invitees: ["Kathy", "Stacy"],duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
 struct HomeView: View {
     var onRespond: ((UUID) -> Void)? = nil
     var onSeeDetails: ((UUID) -> Void)? = nil
     var onLoggedOut: (()-> Void)? = nil
     var onCreateEvent: (()-> Void)? = nil
 //    var username: String = ""
-    @State private var events: [Event] = [Event(name: "Birthday Party", description: "a party?", invitees: ["Kathy", "Stacy"], duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: []), Event(name: "Brunch",  description: "casual brunch", invitees: ["Kathy", "Stacy"],duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
+    
     var body: some View {
         
         Button("Create EVent", systemImage: "plus"){
@@ -20,6 +20,7 @@ struct HomeView: View {
         .padding()
         
         VStack {
+            
             ForEach(events) { event in
                 VStack{
                     Text(event.name)
@@ -40,7 +41,8 @@ struct HomeView: View {
             }
             Spacer()
         }
-        .onAppear{if(globalUsername==""){onLoggedOut?()}}
+        .onAppear{print(events)
+            if(globalUsername==""){onLoggedOut?()}}
         .padding()
     }
 }
