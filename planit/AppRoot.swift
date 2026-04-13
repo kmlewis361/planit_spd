@@ -56,7 +56,8 @@ struct AppRoot: View {
                     EventDetailsView(eventId: eventId)
                 case.eventCreation:
                     EventCreationView(onSend: {
-                        path.removeLast(path.count)})
+                        path.removeLast(path.count)
+                    })
                 case .eventResponse(let eventId):
                     EventResponseView(eventId: eventId, onSubmit: {path.removeLast(path.count)
                         path.append(Route.eventDetails(eventId: eventId))})
