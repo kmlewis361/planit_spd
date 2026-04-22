@@ -8,7 +8,7 @@ struct HomeView: View {
     var onCreateEvent: (()-> Void)? = nil
 //    var username: String = ""
     
-    var body: some View {        
+    var body: some View {
         Button("Create EVent", systemImage: "plus"){
             print("plus clicked")
             onCreateEvent?()
