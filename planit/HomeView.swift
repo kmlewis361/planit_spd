@@ -1,4 +1,5 @@
 import SwiftUI
+import CloudKit
 var events: [Event] = [Event(name: "Birthday Party", description: "a party?", invitees: ["Kathy", "Stacy"], duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: []), Event(name: "Brunch",  description: "casual brunch", invitees: ["Kathy", "Stacy"],duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
 struct HomeView: View {
     @State var localEvents: [Event] = events
@@ -40,7 +41,10 @@ struct HomeView: View {
        
         .onAppear{print(events)
             localEvents = events
+            let query = CKQuery(recordType: "Event", predicate: NSPredicate(value: true))
+            records = CKContainer.default().publicCloudDatabase.records(matching: query)
             if(globalUsername==""){onLoggedOut?()}}
+            
         .padding()
     }
 }
