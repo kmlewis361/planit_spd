@@ -1,4 +1,10 @@
 import SwiftUI
+
+extension Notification.Name {
+    /// Posted after creating an event so `HomeView` refetches (and can merge `object` if CloudKit is briefly stale).
+    static let planitHomeEventsShouldRefresh = Notification.Name("planitHomeEventsShouldRefresh")
+}
+
 var globalUsername: String = ""
 
 // Centralized route enum so we can navigate to multiple destinations programmatically
@@ -13,20 +19,27 @@ enum Route: Hashable {
 
 struct AppRoot: View {
     @State private var path = NavigationPath()
+    /// Bumped whenever the stack returns to root so `HomeView` can refetch CloudKit (root views do not get `onAppear` again when a pushed screen is popped).
+    @State private var homeEventsRefreshTrigger = 0
 
     var body: some View {
         NavigationStack(path: $path) {
-            HomeView(onRespond: {eventId in
-                path.append(Route.eventResponse(eventId: eventId))
-            },onSeeDetails: { eventId in
-                path.append(Route.eventDetails(eventId: eventId))
-            }, onLoggedOut: {
-                path.append(Route.login)
-            }, onCreateEvent:{path.append(Route.eventCreation)
-                print("AppRoot: navigating to event creation")})
-
-            
-            
+            HomeView(
+                homeEventsRefreshTrigger: homeEventsRefreshTrigger,
+                onRespond: { eventId in
+                    path.append(Route.eventResponse(eventId: eventId))
+                },
+                onSeeDetails: { eventId in
+                    path.append(Route.eventDetails(eventId: eventId))
+                },
+                onLoggedOut: {
+                    path.append(Route.login)
+                },
+                onCreateEvent: {
+                    path.append(Route.eventCreation)
+                    print("AppRoot: navigating to event creation")
+                }
+            )
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .welcome:
@@ -47,22 +60,38 @@ struct AppRoot: View {
                     })
                     .navigationBarBackButtonHidden(true)
                 case .home:
-                    HomeView(onSeeDetails: { eventId in
-                        path.removeLast(path.count)
-                        path.append(Route.eventDetails(eventId: eventId))
-                    }, onCreateEvent:{path.append(Route.eventCreation)
-                    print("AppRoot: navigating to event creation")})
+                    HomeView(
+                        homeEventsRefreshTrigger: homeEventsRefreshTrigger,
+                        onSeeDetails: { eventId in
+                            path.removeLast(path.count)
+                            path.append(Route.eventDetails(eventId: eventId))
+                        },
+                        onCreateEvent: {
+                            path.append(Route.eventCreation)
+                            print("AppRoot: navigating to event creation")
+                        }
+                    )
                 case .eventDetails(let eventId):
                     EventDetailsView(eventId: eventId)
-                case.eventCreation:
-                    EventCreationView(onSend: {
-                        path.removeLast(path.count)
+                case .eventCreation:
+                    EventCreationView(onSend: { created in
+                        path = NavigationPath()
+                        homeEventsRefreshTrigger += 1
+                        NotificationCenter.default.post(
+                            name: .planitHomeEventsShouldRefresh,
+                            object: created
+                        )
                     })
                 case .eventResponse(let eventId):
                     EventResponseView(eventId: eventId, onSubmit: {path.removeLast(path.count)
                         path.append(Route.eventDetails(eventId: eventId))})
                 }
             
+            }
+        }
+        .onChange(of: path.count) { oldCount, newCount in
+            if newCount == 0, oldCount > 0 {
+                homeEventsRefreshTrigger += 1
             }
         }
     }

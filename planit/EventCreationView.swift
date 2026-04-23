@@ -10,7 +10,8 @@ import CloudKit
 
 struct EventCreationView: View {
    
-    var onSend: (()-> Void)? = nil
+    /// Called on the main actor after save (or if iCloud is unavailable). Passes the event so the home list can merge it even if CloudKit query lags.
+    var onSend: ((Event) -> Void)? = nil
     @State private var event = Event(name: "", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var inviteesString: String = ""
     var body: some View {
@@ -98,32 +99,22 @@ struct EventCreationView: View {
                 
                 CKContainer.default().accountStatus { accountStatus, error in
                     if accountStatus == .noAccount {
-                        DispatchQueue.main.async {
-                            let message =
-                                """
-                                Sign in to your iCloud account to write records.
-                                On the Home screen, launch Settings, tap Sign in to your
-                                iPhone/iPad, and enter your Apple ID. Turn iCloud Drive on.
-                                """
-                            let alert = UIAlertController(
-                                title: "Sign in to iCloud",
-                                message: message,
-                                preferredStyle: .alert)
-                            alert.addAction(UIAlertAction(title: "OK", style: .cancel))
-//                            self.present(alert, animated: true)
+                        Task { @MainActor in
                             print("NOT AUTHENTICATED")
+                            onSend?(event)
                         }
+                        return
                     }
-                    else {
-                        database.save(record) { record, error in
-                            if let error = error {
+                    database.save(record) { _, error in
+                        Task { @MainActor in
+                            if let error {
                                 print("Error saving record: \(error.localizedDescription)")
-                                return
+                            } else {
+                                print("SAVED RECORD!")
                             }
-                            print("SAVED RECORD!")
+                            onSend?(event)
                         }
                     }
-                    onSend?()
                 }
             }
             .font(.title2)
@@ -139,5 +130,5 @@ struct EventCreationView: View {
 }
 
 #Preview {
-    EventCreationView()
+    EventCreationView(onSend: { _ in })
 }

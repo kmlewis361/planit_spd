@@ -12,6 +12,7 @@ struct EventDetailsView: View {
     var eventId: UUID = UUID()
     var username: String = ""
     //TODO fetch this from a table based off the UUID
+    
     @State private var event: Event = Event(name: "Blank Event", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     var body: some View {
         Text(eventId.uuidString)

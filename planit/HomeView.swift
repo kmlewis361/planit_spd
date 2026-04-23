@@ -1,7 +1,10 @@
 import SwiftUI
 import CloudKit
-var events: [Event] = [Event(name: "Birthday Party", description: "a party?", invitees: ["Kathy", "Stacy"], duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: []), Event(name: "Brunch",  description: "casual brunch", invitees: ["Kathy", "Stacy"],duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
+var events: [Event] = [Event(name: "", description: "", invitees: [], duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
 struct HomeView: View {
+    /// When this value changes (after returning to the navigation root), CloudKit is queried again.
+    var homeEventsRefreshTrigger: Int = 0
+
     @State var localEvents: [Event] = events
     var onRespond: ((UUID) -> Void)? = nil
     var onSeeDetails: ((UUID) -> Void)? = nil
@@ -10,89 +13,82 @@ struct HomeView: View {
 //    var username: String = ""
     
     var body: some View {
-        Button("Create EVent", systemImage: "plus"){
-            print("plus clicked")
-            onCreateEvent?()
+        VStack {
+            Button("Create EVent", systemImage: "plus") {
+                print("plus clicked")
+                onCreateEvent?()
+            }
+            .font(.title)
+            .labelStyle(.iconOnly)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding()
+            ForEach(localEvents) { event in
+                VStack {
+                    if(!event.name.isEmpty){
+                        Text(event.name)
+                            .font(.title2)
+                        
+                        HStack {
+                            Spacer()
+                            Button("Respond") {
+                                onRespond?(event.id)
+                            }
+                            Spacer()
+                            Button("See details") {
+                                onSeeDetails?(event.id)
+                            }
+                            Spacer()
+                        }
+                    
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+            Spacer()
         }
-        .font(.title)
-        .labelStyle(.iconOnly)
-        .multilineTextAlignment(.leading)
-        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding()
-        ForEach(localEvents) { event in
-            VStack{
-                Text(event.name)
-                    .font(.title2)
-                HStack {
-                    Spacer()
-                    Button("Respond"){
-                        onRespond?(event.id)
-                    }
-                    Spacer()
-                    Button("See details"){
-                        onSeeDetails?(event.id)
-                    }
-                    Spacer()
-                }
-            }
-            .padding(.vertical, 6)
+        .onAppear { print(events) }
+        .task(id: homeEventsRefreshTrigger) {
+            await refreshLocalEventsFromCloudKit(prioritizing: nil)
         }
-        Spacer()
-            .onAppear {
-                print(events)
-                if globalUsername == "" {
-                    localEvents = events
-                    onLoggedOut?()
-                    return
-                }
-                Task {
-                    let fetched = await fetchEventsFromCloudKit()
-                    await MainActor.run {
-                        localEvents = fetched
-                    }
-                }
+        .onReceive(NotificationCenter.default.publisher(for: .planitHomeEventsShouldRefresh)) { notification in
+            let pending = notification.object as? Event
+            Task { @MainActor in
+                await refreshLocalEventsFromCloudKit(prioritizing: pending)
             }
-        .padding()
-    }
-
-    private func fetchEventsFromCloudKit() async -> [Event] {
-        let database = CKContainer.default().publicCloudDatabase
-        let query = CKQuery(recordType: "Event", predicate: NSPredicate(value: true))
-        do {
-            let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil)
-            var events: [Event] = []
-            events.reserveCapacity(matchResults.count)
-            for (_, result) in matchResults {
-                switch result {
-                case .success(let record):
-                    print("CloudKit Event id: \(record.recordID.recordName)")
-                    events.append(event(from: record))
-                case .failure(let error):
-                    print("CloudKit record error: \(error.localizedDescription)")
-                }
-            }
-            return events
-        } catch {
-            print("CloudKit query failed: \(error.localizedDescription)")
-            return []
         }
     }
 
-    private func event(from record: CKRecord) -> Event {
-        let idString = record["id"] as? String
-        let id = idString.flatMap { UUID(uuidString: $0) } ?? UUID()
-        let name = (record["name"] as? String) ?? ""
-        let description = (record["description"] as? String) ?? ""
-        return Event(
-            id: id,
-            name: name,
-            description: description,
-            invitees: [],
-            duration: 0,
-            bestTime: Time(startTime: Date(), endTime: Date()),
-            responses: []
-        )
+    @MainActor
+    private func refreshLocalEventsFromCloudKit(prioritizing pending: Event?) async {
+        if globalUsername == "" {
+            localEvents = events
+            onLoggedOut?()
+            return
+        }
+        var fetched = await fetchEventsFromCloudKit()
+        if let pending, !fetched.contains(where: { $0.id == pending.id }) {
+            fetched.insert(pending, at: 0)
+        }
+        localEvents = fetched
     }
+
+//    private func event(from record: CKRecord) -> Event {
+//        let idString = record["id"] as? String
+//        let id = idString.flatMap { UUID(uuidString: $0) } ?? UUID()
+//        let name = (record["name"] as? String) ?? ""
+//        let description = (record["description"] as? String) ?? ""
+//        return Event(
+//            id: id,
+//            name: name,
+//            description: description,
+//            invitees: [],
+//            duration: 0,
+//            bestTime: Time(startTime: Date(), endTime: Date()),
+//            responses: []
+//        )
+//    }
 }
 
 #Preview {
