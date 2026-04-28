@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CloudKit
 
 struct EventResponseView: View {
     var eventId: UUID = UUID()
@@ -15,6 +16,7 @@ struct EventResponseView: View {
 
     @State private var selectedTimes: Set<Time> = []
     @State private var isLoadingEvent: Bool = true
+    @State private var isSubmitting: Bool = false
 
     var body: some View {
         Text(eventId.uuidString)
@@ -73,10 +75,10 @@ struct EventResponseView: View {
             )
             .padding(.horizontal)
            
-            Button("I'm done, show me the details!"){
-                //TODO add functionality for actually sending the event to the backend and stuff
-               onSubmit?()
+            Button("I'm done, show me the details!") {
+                Task { await submitResponseToCloudKitAndContinue() }
             }
+            .disabled(isSubmitting || isLoadingEvent)
             .font(.title2)
             .padding()
                 
@@ -101,6 +103,38 @@ struct EventResponseView: View {
             let allowed = Set(fetched.proposedTimes)
             selectedTimes = selectedTimes.filter { allowed.contains($0) }
         }
+    }
+
+    @MainActor
+    private func submitResponseToCloudKitAndContinue() async {
+        if globalUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            onSubmit?()
+            return
+        }
+
+        isSubmitting = true
+        defer { isSubmitting = false }
+
+        let database = CKContainer.default().publicCloudDatabase
+        let record = CKRecord(recordType: "Response")
+
+        let times = selectedTimes.sorted { $0.startTime < $1.startTime }
+        let timesData = try? JSONEncoder().encode(times)
+
+        record.setValuesForKeys([
+            "eventId": eventId.uuidString,
+            "username": globalUsername,
+            "timesData": timesData as Any
+        ])
+
+        do {
+            _ = try await database.save(record)
+            print("Saved Response for eventId=\(eventId.uuidString)")
+        } catch {
+            print("Error saving Response: \(error.localizedDescription)")
+        }
+
+        onSubmit?()
     }
 }
 
