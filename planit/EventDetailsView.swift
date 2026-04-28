@@ -14,6 +14,14 @@ struct EventDetailsView: View {
     //TODO fetch this from a table based off the UUID
     
     @State private var event: Event = Event(name: "Blank Event", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var topTimes: [RankedTime] = []
+    @State private var isLoadingTopTimes: Bool = true
+
+    private struct RankedTime: Identifiable {
+        let time: Time
+        let votes: Int
+        var id: String { time.id }
+    }
     var body: some View {
         Text(eventId.uuidString)
         VStack{
@@ -58,12 +66,33 @@ struct EventDetailsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
                 .padding(.top)
-            Text("dummy best time") //TODO
-                .font(.body)
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if isLoadingTopTimes {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            } else if topTimes.isEmpty {
+                Text("No responses yet.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(topTimes) { ranked in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(formatTimeRange(ranked.time))
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text("\(ranked.votes)")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 .padding(.horizontal)
+            }
             //add some stuff for showing more times and who's free
             
             
@@ -75,6 +104,7 @@ struct EventDetailsView: View {
         }
         .task {
             await refreshLocalEventFromCloudKit()
+            await refreshTopTimesFromCloudKit()
         }
         .padding()
     }
@@ -83,6 +113,22 @@ struct EventDetailsView: View {
         if let fetched = await fetchEventFromId(idString: eventId.uuidString) {
             event = fetched
         }
+    }
+
+    @MainActor
+    private func refreshTopTimesFromCloudKit() async {
+        isLoadingTopTimes = true
+        defer { isLoadingTopTimes = false }
+        let responses = await fetchResponsesForEvent(eventIdString: eventId.uuidString)
+        let ranked = topTimeSlots(from: responses, limit: 3)
+        topTimes = ranked.map { RankedTime(time: $0.time, votes: $0.votes) }
+    }
+
+    private func formatTimeRange(_ time: Time) -> String {
+        let day = time.startTime.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        let start = time.startTime.formatted(.dateTime.hour().minute())
+        let end = time.endTime.formatted(.dateTime.hour().minute())
+        return "\(day) \(start)–\(end)"
     }
 }
 

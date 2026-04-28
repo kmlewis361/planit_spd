@@ -7,6 +7,49 @@
 import CloudKit
 import Foundation
 
+func fetchResponsesForEvent(eventIdString: String) async -> [Response] {
+    let database = CKContainer.default().publicCloudDatabase
+    let predicate = NSPredicate(format: "eventId == %@", eventIdString)
+    let query = CKQuery(recordType: "Response", predicate: predicate)
+    do {
+        let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil)
+        var responses: [Response] = []
+        responses.reserveCapacity(matchResults.count)
+        for (_, result) in matchResults {
+            switch result {
+            case .success(let record):
+                let username = (record["username"] as? String) ?? ""
+                let timesData = record["timesData"] as? Data
+                let times = timesData.flatMap { try? JSONDecoder().decode([Time].self, from: $0) } ?? []
+                responses.append(Response(username: username, times: times))
+            case .failure(let error):
+                print("CloudKit response record error: \(error.localizedDescription)")
+            }
+        }
+        return responses
+    } catch {
+        print("CloudKit response query failed: \(error.localizedDescription)")
+        return []
+    }
+}
+
+func topTimeSlots(from responses: [Response], limit: Int = 3) -> [(time: Time, votes: Int)] {
+    var counts: [Time: Int] = [:]
+    for response in responses {
+        // Count each slot once per user (in case of duplicates).
+        for slot in Set(response.times) {
+            counts[slot, default: 0] += 1
+        }
+    }
+    return counts
+        .sorted { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value > rhs.value }
+            return lhs.key.startTime < rhs.key.startTime
+        }
+        .prefix(max(0, limit))
+        .map { (time: $0.key, votes: $0.value) }
+}
+
 func fetchEventFromId(idString: String) async -> Event? {
     let database = CKContainer.default().publicCloudDatabase
     let predicate = NSPredicate(format: "id == %@", idString)
