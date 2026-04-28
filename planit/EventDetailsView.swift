@@ -73,7 +73,16 @@ struct EventDetailsView: View {
             
            
         }
+        .task {
+            await refreshLocalEventFromCloudKit()
+        }
         .padding()
+    }
+    @MainActor
+    private func refreshLocalEventFromCloudKit() async {
+        if let fetched = await fetchEventFromId(idString: eventId.uuidString) {
+            event = fetched
+        }
     }
 }
 
