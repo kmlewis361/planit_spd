@@ -11,7 +11,7 @@ import CloudKit
 struct EventResponseView: View {
     var eventId: UUID = UUID()
     //TODO fetch this from a table based off the UUID
-    var onSubmit: (() -> Void)? = nil
+    var onSubmit: ((Response) -> Void)? = nil
     @State private var event: Event = Event(name: "Blank Event", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
 
     @State private var selectedTimes: Set<Time> = []
@@ -107,8 +107,11 @@ struct EventResponseView: View {
 
     @MainActor
     private func submitResponseToCloudKitAndContinue() async {
-        if globalUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            onSubmit?()
+        let username = globalUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let times = selectedTimes.sorted { $0.startTime < $1.startTime }
+        let localResponse = Response(username: username, times: times)
+        if username.isEmpty {
+            onSubmit?(localResponse)
             return
         }
 
@@ -118,23 +121,26 @@ struct EventResponseView: View {
         let database = CKContainer.default().publicCloudDatabase
         let record = CKRecord(recordType: "Response")
 
-        let times = selectedTimes.sorted { $0.startTime < $1.startTime }
         let timesData = try? JSONEncoder().encode(times)
 
         record.setValuesForKeys([
             "eventId": eventId.uuidString,
-            "username": globalUsername,
+            "username": username,
             "timesData": timesData as Any
         ])
 
         do {
             _ = try await database.save(record)
             print("Saved Response for eventId=\(eventId.uuidString)")
+            NotificationCenter.default.post(
+                name: .planitEventResponsesDidChange,
+                object: eventId.uuidString
+            )
         } catch {
             print("Error saving Response: \(error.localizedDescription)")
         }
 
-        onSubmit?()
+        onSubmit?(localResponse)
     }
 }
 

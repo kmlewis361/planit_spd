@@ -3,6 +3,8 @@ import SwiftUI
 extension Notification.Name {
     /// Posted after creating an event so `HomeView` refetches (and can merge `object` if CloudKit is briefly stale).
     static let planitHomeEventsShouldRefresh = Notification.Name("planitHomeEventsShouldRefresh")
+    /// Posted after submitting a response so `EventDetailsView` can refresh ranked times.
+    static let planitEventResponsesDidChange = Notification.Name("planitEventResponsesDidChange")
 }
 
 var globalUsername: String = ""
@@ -21,6 +23,7 @@ struct AppRoot: View {
     @State private var path = NavigationPath()
     /// Bumped whenever the stack returns to root so `HomeView` can refetch CloudKit (root views do not get `onAppear` again when a pushed screen is popped).
     @State private var homeEventsRefreshTrigger = 0
+    @State private var pendingResponseForDetails: [UUID: Response] = [:]
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -72,7 +75,7 @@ struct AppRoot: View {
                         }
                     )
                 case .eventDetails(let eventId):
-                    EventDetailsView(eventId: eventId)
+                    EventDetailsView(eventId: eventId, pendingResponse: pendingResponseForDetails[eventId])
                 case .eventCreation:
                     EventCreationView(onSend: { created in
                         path = NavigationPath()
@@ -83,8 +86,11 @@ struct AppRoot: View {
                         )
                     })
                 case .eventResponse(let eventId):
-                    EventResponseView(eventId: eventId, onSubmit: {path.removeLast(path.count)
-                        path.append(Route.eventDetails(eventId: eventId))})
+                    EventResponseView(eventId: eventId, onSubmit: { response in
+                        pendingResponseForDetails[eventId] = response
+                        path.removeLast(path.count)
+                        path.append(Route.eventDetails(eventId: eventId))
+                    })
                 }
             
             }

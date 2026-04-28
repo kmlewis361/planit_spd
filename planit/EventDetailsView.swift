@@ -11,11 +11,14 @@ struct EventDetailsView: View {
 //    var event: Event = Event(name: "Blank Event", duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     var eventId: UUID = UUID()
     var username: String = ""
+    var pendingResponse: Response? = nil
     //TODO fetch this from a table based off the UUID
     
     @State private var event: Event = Event(name: "Blank Event", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var topTimes: [RankedTime] = []
     @State private var isLoadingTopTimes: Bool = true
+    @State private var topTimesRefreshToken: Int = 0
+    private var topTimesTaskKey: String { "\(eventId.uuidString)-\(pendingResponse?.id.uuidString ?? "none")-\(topTimesRefreshToken)" }
 
     private struct RankedTime: Identifiable {
         let time: Time
@@ -104,7 +107,14 @@ struct EventDetailsView: View {
         }
         .task {
             await refreshLocalEventFromCloudKit()
-            await refreshTopTimesFromCloudKit()
+        }
+        .task(id: topTimesTaskKey) {
+            await refreshTopTimesFromCloudKit(prioritizing: pendingResponse)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .planitEventResponsesDidChange)) { notification in
+            guard let changedEventId = notification.object as? String else { return }
+            guard changedEventId == eventId.uuidString else { return }
+            topTimesRefreshToken += 1
         }
         .padding()
     }
@@ -116,10 +126,15 @@ struct EventDetailsView: View {
     }
 
     @MainActor
-    private func refreshTopTimesFromCloudKit() async {
+    private func refreshTopTimesFromCloudKit(prioritizing pending: Response?) async {
         isLoadingTopTimes = true
         defer { isLoadingTopTimes = false }
-        let responses = await fetchResponsesForEvent(eventIdString: eventId.uuidString)
+        var responses = await fetchResponsesForEvent(eventIdString: eventId.uuidString)
+        if let pending, !pending.username.isEmpty {
+            // If CloudKit hasn't surfaced the new response yet, count it locally so the user sees their vote immediately.
+            responses.removeAll(where: { $0.username == pending.username })
+            responses.append(pending)
+        }
         let ranked = topTimeSlots(from: responses, limit: 3)
         topTimes = ranked.map { RankedTime(time: $0.time, votes: $0.votes) }
     }
