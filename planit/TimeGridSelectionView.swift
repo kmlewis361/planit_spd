@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TimeGridSelectionView: View {
     @Binding var selectedTimes: Set<Time>
+    /// If set, only these slots are selectable (others are shown disabled).
+    private let allowedSlots: Set<Time>?
 
     private let daysToShow: Int
     private let startHour: Int
@@ -18,6 +20,7 @@ struct TimeGridSelectionView: View {
 
     init(
         selectedTimes: Binding<Set<Time>>,
+        allowedSlots: Set<Time>? = nil,
         daysToShow: Int = 7,
         startHour: Int = 8,
         endHour: Int = 20,
@@ -25,6 +28,7 @@ struct TimeGridSelectionView: View {
         height: CGFloat = 320
     ) {
         self._selectedTimes = selectedTimes
+        self.allowedSlots = allowedSlots
         self.daysToShow = daysToShow
         self.startHour = startHour
         self.endHour = endHour
@@ -50,6 +54,7 @@ struct TimeGridSelectionView: View {
                         guard let slot = slot(at: value.location, timeLabelWidth: timeLabelWidth, headerHeight: headerHeight, cellWidth: cellWidth, cellHeight: cellHeight) else {
                             return
                         }
+                        if let allowedSlots, !allowedSlots.contains(slot) { return }
                         if dragMode == nil {
                             dragMode = selectedTimes.contains(slot) ? .deselecting : .selecting
                             dragVisited.removeAll()
@@ -105,7 +110,7 @@ struct TimeGridSelectionView: View {
                     ForEach(0..<daysToShow, id: \.self) { dayIndex in
                         let slot = slot(forDay: dayIndex, row: row)
                         Rectangle()
-                            .fill(selectedTimes.contains(slot) ? Color.accentColor.opacity(0.35) : Color.clear)
+                            .fill(fillColor(for: slot))
                             .frame(width: cellWidth, height: cellHeight)
                             .overlay(
                                 Rectangle()
@@ -115,6 +120,16 @@ struct TimeGridSelectionView: View {
                 }
             }
         }
+    }
+
+    private func fillColor(for slot: Time) -> Color {
+        if selectedTimes.contains(slot) {
+            return Color.accentColor.opacity(0.35)
+        }
+        if let allowedSlots, !allowedSlots.contains(slot) {
+            return Color.secondary.opacity(0.06)
+        }
+        return Color.clear
     }
 
     private func slot(forDay dayIndex: Int, row: Int) -> Time {

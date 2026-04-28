@@ -14,6 +14,7 @@ struct EventResponseView: View {
     @State private var event: Event = Event(name: "Blank Event", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
 
     @State private var selectedTimes: Set<Time> = []
+    @State private var isLoadingEvent: Bool = true
 
     var body: some View {
         Text(eventId.uuidString)
@@ -60,8 +61,15 @@ struct EventResponseView: View {
                 .padding(.horizontal)
                 .padding(.top)
 
+            if isLoadingEvent {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
+
             TimeGridSelectionView(
-                selectedTimes: $selectedTimes
+                selectedTimes: $selectedTimes,
+                allowedSlots: Set(event.proposedTimes)
             )
             .padding(.horizontal)
            
@@ -77,7 +85,22 @@ struct EventResponseView: View {
             
            
         }
+        .task {
+            await loadEventFromCloudKit()
+        }
         .padding()
+    }
+
+    @MainActor
+    private func loadEventFromCloudKit() async {
+        isLoadingEvent = true
+        defer { isLoadingEvent = false }
+        if let fetched = await fetchEventFromId(idString: eventId.uuidString) {
+            event = fetched
+            // If the allowed set changes (e.g. after loading), drop any selections that aren't allowed.
+            let allowed = Set(fetched.proposedTimes)
+            selectedTimes = selectedTimes.filter { allowed.contains($0) }
+        }
     }
 }
 

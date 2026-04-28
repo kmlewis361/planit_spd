@@ -14,6 +14,8 @@ struct Event: Identifiable {
     var description: String
     var invitees: [String]
     var duration: TimeInterval
+    /// Time blocks proposed by the event creator (the grid the invitees can choose from).
+    var proposedTimes: [Time]
     var bestTime: Time
 //    var bestLocation: String
     var responses: [Response]
@@ -24,6 +26,7 @@ struct Event: Identifiable {
         description: String,
         invitees: [String],
         duration: TimeInterval,
+        proposedTimes: [Time] = [],
         bestTime: Time,
         responses: [Response]
     ) {
@@ -32,6 +35,7 @@ struct Event: Identifiable {
         self.description = description
         self.invitees = invitees
         self.duration = duration
+        self.proposedTimes = proposedTimes
         self.bestTime = bestTime
         self.responses = responses
     }

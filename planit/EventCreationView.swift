@@ -78,6 +78,16 @@ struct EventCreationView: View {
                 let database = container.publicCloudDatabase
                 let record = CKRecord(recordType: "Event")
                 let proposedTimesData = encodeProposedTimesForCloudKit(proposedTimes)
+                let createdEvent = Event(
+                    id: event.id,
+                    name: event.name,
+                    description: event.description,
+                    invitees: event.invitees,
+                    duration: event.duration,
+                    proposedTimes: proposedTimes.sorted { $0.startTime < $1.startTime },
+                    bestTime: event.bestTime,
+                    responses: event.responses
+                )
                 record.setValuesForKeys([
                     "id": event.id.uuidString,
                     "name": event.name,
@@ -111,7 +121,7 @@ struct EventCreationView: View {
                             } else {
                                 print("SAVED RECORD!")
                             }
-                            onSend?(event)
+                            onSend?(createdEvent)
                         }
                     }
                 }

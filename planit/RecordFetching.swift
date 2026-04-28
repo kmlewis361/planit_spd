@@ -57,12 +57,15 @@ func event(from record: CKRecord) -> Event {
     let id = idString.flatMap { UUID(uuidString: $0) } ?? UUID()
     let name = (record["name"] as? String) ?? ""
     let description = (record["description"] as? String) ?? ""
+    let proposedTimesData = record["proposedTimesData"] as? Data
+    let proposedTimes = proposedTimesData.flatMap { try? JSONDecoder().decode([Time].self, from: $0) } ?? []
     return Event(
         id: id,
         name: name,
         description: description,
         invitees: [],
         duration: 0,
+        proposedTimes: proposedTimes,
         bestTime: Time(startTime: Date(), endTime: Date()),
         responses: []
     )
