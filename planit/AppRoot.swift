@@ -59,9 +59,11 @@ struct AppRoot: View {
                        
                     })
                 case .login:
-                    LoginView(onLogin: {
-                                path.removeLast(path.count)
-                                path.append(Route.welcome)
+                    LoginView(onLogin: { showWelcome in
+                        path.removeLast(path.count)
+                        if showWelcome {
+                            path.append(Route.welcome)
+                        }
                     })
                     .navigationBarBackButtonHidden(true)
                 case .home:

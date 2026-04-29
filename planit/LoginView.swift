@@ -8,7 +8,8 @@ import SwiftUI
 import UIKit
 
 struct LoginView: View {
-    var onLogin: (() -> Void)? = nil
+    /// Called after onboarding succeeds. `showWelcome` is true only when the user just claimed a new username this session (show Welcome); returning users pass `false` (go to Home).
+    var onLogin: ((_ showWelcome: Bool) -> Void)? = nil
 
     @State private var phase: Phase = .checking
     @State private var ownerRecordName: String = ""
@@ -137,7 +138,7 @@ struct LoginView: View {
                         .font(.title2)
                         .fontWeight(.semibold)
                     Button("Continue") {
-                        onLogin?()
+                        onLogin?(false)
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 8)
@@ -278,7 +279,7 @@ struct LoginView: View {
             let saved = try await upsertPlanItUser(displayUsername: chosenUsername, ownerRecordName: owner)
             globalUsername = saved
             globalCloudKitOwnerRecordName = owner
-            onLogin?()
+            onLogin?(true)
         } catch PlanItAccountError.cloudKitSchemaMissing {
             phase = .cloudKitBackendMissing
         } catch {
