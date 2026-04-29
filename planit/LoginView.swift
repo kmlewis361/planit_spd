@@ -2,79 +2,303 @@
 //  LoginView.swift
 //  planit
 //
-//  Created by Elise Wong-McBride on 3/6/26.
-//
 
+import CloudKit
 import SwiftUI
+import UIKit
 
 struct LoginView: View {
-    // Allow the parent to provide a handler when login succeeds
     var onLogin: (() -> Void)? = nil
 
-    @State public var username = ""
-    @State public var password = ""
-    @State private var showError = false
+    @State private var phase: Phase = .checking
+    @State private var ownerRecordName: String = ""
+    @State private var chosenUsername = ""
+    @State private var errorMessage: String?
+
+    private enum Phase: Equatable {
+        case checking
+        case iCloudHelp(reason: ICloudBlockReason)
+        case cloudKitBackendMissing
+        case chooseUsername
+        case returning(username: String)
+        case saving
+    }
+
+    private enum ICloudBlockReason: Equatable {
+        case notSignedIn
+        case restricted
+        case temporarilyUnavailable
+        case couldNotDetermine
+        case generic
+    }
 
     var body: some View {
-        VStack {
-            Spacer()
+        VStack(spacing: 16) {
+            Spacer(minLength: 24)
             Text("PlanIt")
                 .font(.largeTitle)
                 .fontWeight(.semibold)
-                .foregroundColor(Color.accentColor)
-            TextField("username", text: $username)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .frame(width: 240)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.gray, lineWidth: 1)
-                )
-            SecureField("password", text: $password)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .frame(width: 240)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.gray, lineWidth: 1)
-                )
-                .padding(8)
+                .foregroundStyle(Color.accentColor)
 
-            Button("Log In") {
-                // Basic validation: require non-empty username/password
-                globalUsername = username
-                if username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty {
-                    showError = true
-                } else {
-                    showError = false
-                    // call the provided handler so the root can navigate
-                    // Dispatch asynchronously to avoid mutating parent state during view updates
-                    print("LoginView: successful login for username=\(username)")
-                    onLogin?()
+            Group {
+                switch phase {
+                case .checking:
+                    ProgressView("Checking iCloud…")
+                        .padding(.top, 12)
+
+                case .iCloudHelp(let reason):
+                    Text(titleForICloud(reason))
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    Text(detailForICloud(reason))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+
+                    VStack(spacing: 10) {
+                        Button("Try again") {
+                            Task { await bootstrap() }
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        if showsOpenSettings(for: reason) {
+                            Button("Open Settings") {
+                                openSystemSettings()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        Link("Apple Support — iCloud", destination: URL(string: "https://support.apple.com/icloud")!)
+                            .font(.footnote)
+                    }
+
+                case .cloudKitBackendMissing:
+                    Text("PlanIt accounts aren’t available yet")
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    Text(
+                        """
+                        Your device can be signed into iCloud while PlanIt’s database schema still isn’t published \
+                        for this app version (often showing “did not find record type PlanItUser”).
+                        Install an updated PlanIt build once your organizer deploys CloudKit, then tap Try again.
+                        """
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                    Button("Try again") {
+                        Task { await bootstrap() }
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Link("Apple — Designing a CloudKit database", destination: URL(string: "https://developer.apple.com/documentation/cloudkit/designing-and-creating-a-cloudkit-database")!)
+                        .font(.footnote)
+
+                    #if DEBUG
+                    Text(
+                        """
+                        DEBUG: In Xcode with CloudKit enabled, deploy schema (PlanItUser with username, \
+                        usernameLowercased QUERYABLE, ownerRecordName QUERYABLE). Deploy Development schema \
+                        before Testing on device.
+                        """
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal)
+                    #endif
+
+                case .chooseUsername:
+                    Text("Choose your PlanIt username (letters, numbers, underscores). It must be unique.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    TextField("username", text: $chosenUsername)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 280)
+                    Button("Continue") {
+                        Task { await saveNewUsername() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(chosenUsername.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
+
+                case .returning(let username):
+                    Text("Signed in with iCloud.")
+                        .foregroundStyle(.secondary)
+                    Text("@\(username)")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Button("Continue") {
+                        onLogin?()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 8)
+
+                case .saving:
+                    ProgressView("Saving profile…")
+                        .padding(.top, 12)
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .padding(.top, 8)
 
-            if showError {
-                Text("Please enter username and password")
-                    .foregroundColor(.red)
+            if let errorMessage {
+                Text(errorMessage)
                     .font(.footnote)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
             }
-
-            //TODO figure out page nav for 'Create account'
-            Button("Don't have an account yet? Create one!"){
-                //TODO present create-account flow
-            }
-                .font(.footnote)
-                .padding(.top, 6)
 
             Spacer()
         }
         .padding()
+        .task {
+            await bootstrap()
+        }
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func showsOpenSettings(for reason: ICloudBlockReason) -> Bool {
+        switch reason {
+        case .notSignedIn, .restricted, .couldNotDetermine, .generic:
+            return true
+        case .temporarilyUnavailable:
+            return false
+        }
+    }
+
+    private func titleForICloud(_ reason: ICloudBlockReason) -> String {
+        switch reason {
+        case .notSignedIn:
+            return "Sign in to iCloud"
+        case .restricted:
+            return "iCloud is restricted on this device"
+        case .temporarilyUnavailable:
+            return "iCloud is temporarily unavailable"
+        case .couldNotDetermine:
+            return "Couldn’t verify iCloud status"
+        case .generic:
+            return "We couldn’t connect to iCloud"
+        }
+    }
+
+    private func detailForICloud(_ reason: ICloudBlockReason) -> String {
+        switch reason {
+        case .notSignedIn:
+            return "Open Settings → Apple ID → sign in, then enable iCloud Drive if prompted."
+        case .restricted:
+            return "Check Screen Time, parental controls, or a managed-device profile that limits iCloud."
+        case .temporarilyUnavailable:
+            return "Wait briefly and try again. Apple’s iCloud services may be recovering."
+        case .couldNotDetermine:
+            return "Check your network connection, then Try again."
+        case .generic:
+            return "Confirm iCloud is turned on for PlanIt’s container on this device and account."
+        }
+    }
+
+    @MainActor
+    private func bootstrap() async {
+        phase = .checking
+        errorMessage = nil
+        do {
+            let owner = try await cloudKitOwnerRecordName()
+            ownerRecordName = owner
+
+            if let profile = try await fetchPlanItUserProfile(ownerRecordName: owner),
+               let rawName = profile["username"] as? String {
+                let username = normalizedPlanItUsername(rawName)
+                if username.isEmpty {
+                    phase = .chooseUsername
+                    return
+                }
+                globalUsername = username
+                globalCloudKitOwnerRecordName = owner
+                phase = .returning(username: username)
+            } else {
+                phase = .chooseUsername
+            }
+        } catch PlanItAccountError.iCloudNotSignedIn {
+            phase = .iCloudHelp(reason: .notSignedIn)
+        } catch PlanItAccountError.iCloudRestricted {
+            phase = .iCloudHelp(reason: .restricted)
+        } catch PlanItAccountError.iCloudTemporarilyUnavailable {
+            phase = .iCloudHelp(reason: .temporarilyUnavailable)
+        } catch PlanItAccountError.iCloudCouldNotDetermine {
+            phase = .iCloudHelp(reason: .couldNotDetermine)
+        } catch PlanItAccountError.iCloudUnavailable {
+            phase = .iCloudHelp(reason: .generic)
+        } catch PlanItAccountError.noUserRecord {
+            errorMessage = PlanItAccountError.noUserRecord.localizedDescription
+            phase = .iCloudHelp(reason: .generic)
+        } catch PlanItAccountError.cloudKitSchemaMissing {
+            phase = .cloudKitBackendMissing
+        } catch {
+            let mapped = mapPlanItAccountCloudKitError(error)
+            if let planIt = mapped as? PlanItAccountError {
+                switch planIt {
+                case .cloudKitSchemaMissing:
+                    phase = .cloudKitBackendMissing
+                    return
+                default:
+                    errorMessage = planIt.localizedDescription
+                    phase = .iCloudHelp(reason: .generic)
+                    return
+                }
+            }
+            errorMessage = mapped.localizedDescription
+            phase = .iCloudHelp(reason: .generic)
+        }
+    }
+
+    @MainActor
+    private func saveNewUsername() async {
+        phase = .saving
+        errorMessage = nil
+        do {
+            let owner: String
+            if ownerRecordName.isEmpty {
+                owner = try await cloudKitOwnerRecordName()
+                ownerRecordName = owner
+            } else {
+                owner = ownerRecordName
+            }
+
+            let saved = try await upsertPlanItUser(displayUsername: chosenUsername, ownerRecordName: owner)
+            globalUsername = saved
+            globalCloudKitOwnerRecordName = owner
+            onLogin?()
+        } catch PlanItAccountError.cloudKitSchemaMissing {
+            phase = .cloudKitBackendMissing
+        } catch {
+            let mapped = mapPlanItAccountCloudKitError(error)
+            if let planIt = mapped as? PlanItAccountError {
+                switch planIt {
+                case .cloudKitSchemaMissing:
+                    phase = .cloudKitBackendMissing
+                default:
+                    errorMessage = planIt.localizedDescription
+                    phase = .chooseUsername
+                }
+            } else {
+                errorMessage = mapped.localizedDescription
+                phase = .chooseUsername
+            }
+        }
     }
 }
 
-struct LoginView_Previews: PreviewProvider {
-    static var previews: some View {
-        LoginView()
-    }
+#Preview {
+    LoginView()
 }

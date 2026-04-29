@@ -8,6 +8,8 @@ extension Notification.Name {
 }
 
 var globalUsername: String = ""
+/// Stable CloudKit user record name for the signed-in iCloud account (ties profile + invites to iCloud).
+var globalCloudKitOwnerRecordName: String = ""
 
 // Centralized route enum so we can navigate to multiple destinations programmatically
 enum Route: Hashable {
