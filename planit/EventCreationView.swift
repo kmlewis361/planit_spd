@@ -12,58 +12,51 @@ struct EventCreationView: View {
    
     /// Called on the main actor after save (or if iCloud is unavailable). Passes the event so the home list can merge it even if CloudKit query lags.
     var onSend: ((Event) -> Void)? = nil
-    @State private var event = Event(name: "", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var event = Event(name: "", description: "blank descprition", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var inviteesString: String = ""
+    @State private var inviteSuggestions: [String] = []
+    @State private var inviteSearchTask: Task<Void, Never>?
+    @State private var inviteAutocompleteSearching = false
+    @State private var inviteAutocompleteShowNoMatches = false
     @State private var proposedTimes: Set<Time> = []
     var body: some View {
-        VStack{
-            TextField("Event Name", text: $event.name)
-                .font(.title)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-            Text("Add a description!")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            TextField("Event description", text: $event.description)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.bottom)
-            Text("Who's invited?")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            //TODO add text input with autocomplete and stuff
-            TextField("Enter usernames (split by commas)", text: $inviteesString)
-                .font(.body)
-               .foregroundStyle(.primary)
-               .multilineTextAlignment(.leading)
-               .frame(maxWidth: .infinity, alignment: .leading)
-               .padding(.horizontal)
-               .onChange(of: inviteesString) {
-                   event.invitees = inviteesString.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }
-                   print(event.invitees)
-               }
-                   
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                TextField("Event Name", text: $event.name)
+                    .font(.title)
+                    .foregroundStyle(.accent)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Propose times:")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.top)
-            TimeGridSelectionView(selectedTimes: $proposedTimes, daysToShow: 7, startHour: 8, endHour: 20, slotMinutes: 30, height: 260)
-                .padding(.horizontal)
+                Text("Add a description!")
+                    .font(.headline)
+                    .foregroundStyle(.accent)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                TextField("Event description", text: $event.description)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text("Who's invited?")
+                    .font(.headline)
+                    .foregroundStyle(.accent)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                inviteesAutocompleteSection
+
+                Text("Propose times:")
+                    .font(.headline)
+                    .foregroundStyle(.accent)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+
+                TimeGridSelectionView(selectedTimes: $proposedTimes, daysToShow: 7, startHour: 8, endHour: 20, slotMinutes: 30, height: 260)
+
 //            var name: String
 //            var description: String
 //            var invitees: [String]
@@ -71,76 +64,211 @@ struct EventCreationView: View {
 //            var bestTime: Time
         //    var bestLocation: String
 //            var responses: [Response]
-            Button("Send it!"){
-                //TODO add functionality for actually sending the event to the backend and stuff
-                events.append(event)
-                let container = CKContainer.default()
-                let database = container.publicCloudDatabase
-                let record = CKRecord(recordType: "Event")
-                let proposedTimesData = encodeProposedTimesForCloudKit(proposedTimes)
-                let createdEvent = Event(
-                    id: event.id,
-                    name: event.name,
-                    description: event.description,
-                    invitees: event.invitees,
-                    duration: event.duration,
-                    proposedTimes: proposedTimes.sorted { $0.startTime < $1.startTime },
-                    bestTime: event.bestTime,
-                    responses: event.responses
-                )
-                record.setValuesForKeys([
-                    "id": event.id.uuidString,
-                    "name": event.name,
-                    "description": event.description,
-                    "proposedTimesData": proposedTimesData as Any,
-//                    "invitees": event.invitees,
-//                    "duration": event.duration,
-//                    "bestTime": event.bestTime,
-//                    "bestLocation": event.bestLocation,
-//                    "responses": event.responses
-//                    "dueDate": DateComponents(
-//                        calendar: Calendar.current,
-//                        year: 2019,
-//                        month: 10,
-//                        day: 28).date!,
-                    
-                ])
-                
-                CKContainer.default().accountStatus { accountStatus, error in
-                    if accountStatus == .noAccount {
-                        Task { @MainActor in
-                            print("NOT AUTHENTICATED")
-                            onSend?(event)
-                        }
-                        return
-                    }
-                    database.save(record) { _, error in
-                        Task { @MainActor in
-                            if let error {
-                                print("Error saving record: \(error.localizedDescription)")
-                            } else {
-                                print("SAVED RECORD!")
+                Button("Send it!") {
+                    //TODO add functionality for actually sending the event to the backend and stuff
+                    events.append(event)
+                    let container = CKContainer.default()
+                    let database = container.publicCloudDatabase
+                    let record = CKRecord(recordType: "Event")
+                    let proposedTimesData = encodeProposedTimesForCloudKit(proposedTimes)
+                    let createdEvent = Event(
+                        id: event.id,
+                        name: event.name,
+                        description: event.description,
+                        invitees: event.invitees,
+                        duration: event.duration,
+                        proposedTimes: proposedTimes.sorted { $0.startTime < $1.startTime },
+                        bestTime: event.bestTime,
+                        responses: event.responses
+                    )
+                    record.setValuesForKeys([
+                        "id": event.id.uuidString,
+                        "name": event.name,
+                        "description": event.description,
+                        "proposedTimesData": proposedTimesData as Any,
+                    ])
+
+                    CKContainer.default().accountStatus { accountStatus, error in
+                        if accountStatus == .noAccount {
+                            Task { @MainActor in
+                                print("NOT AUTHENTICATED")
+                                onSend?(createdEvent)
                             }
-                            onSend?(createdEvent)
+                            return
+                        }
+                        database.save(record) { _, error in
+                            Task { @MainActor in
+                                if let error {
+                                    print("Error saving record: \(error.localizedDescription)")
+                                } else {
+                                    print("SAVED RECORD!")
+                                }
+                                onSend?(createdEvent)
+                            }
                         }
                     }
                 }
+                .font(.title2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Color.clear.frame(height: 24)
             }
-            .font(.title2)
             .padding()
-                
-           
-            Spacer()
-            
-           
         }
-        .padding()
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var inviteesAutocompleteSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Enter usernames (comma-separated)", text: $inviteesString)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.asciiCapable)
+                .textContentType(nil)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if inviteAutocompleteSearching {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Looking up usernames…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !inviteSuggestions.isEmpty {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(inviteSuggestions.indices, id: \.self) { idx in
+                        let name = inviteSuggestions[idx]
+                        Button {
+                            applyInviteeSuggestion(name)
+                        } label: {
+                            HStack {
+                                Text(name)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        if idx < inviteSuggestions.count - 1 {
+                            Divider().padding(.leading, 12)
+                        }
+                    }
+                }
+                .background(Color.secondary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                )
+            } else if inviteAutocompleteShowNoMatches {
+                Text("No matching PlanIt users for that prefix.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onAppear {
+            if inviteesString.isEmpty, !event.invitees.isEmpty {
+                inviteesString = event.invitees.joined(separator: ", ")
+            }
+            syncInviteesFromString()
+        }
+        .onChange(of: inviteesString) { _, newValue in
+            inviteAutocompleteShowNoMatches = false
+            syncInviteesFromString()
+            scheduleInviteAutocomplete(for: newValue)
+        }
     }
 
     private func encodeProposedTimesForCloudKit(_ times: Set<Time>) -> Data? {
         // CloudKit can store `Data` directly; encoding keeps the schema simple.
         let sorted = times.sorted { $0.startTime < $1.startTime }
         return try? JSONEncoder().encode(sorted)
+    }
+
+    private func syncInviteesFromString() {
+        event.invitees = inviteesString
+            .split(separator: ",")
+            .map { normalizedPlanItUsername(String($0)) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func currentInviteeTypingFragment(from fullText: String) -> String {
+        let segments = fullText.split(separator: ",", omittingEmptySubsequences: false).map { normalizedPlanItUsername(String($0)) }
+        return segments.last ?? ""
+    }
+
+    private func committedInviteeSet(from fullText: String) -> Set<String> {
+        let segments = fullText.split(separator: ",", omittingEmptySubsequences: false).map { normalizedPlanItUsername(String($0)) }
+        guard segments.count > 1 else { return [] }
+        return Set(segments.dropLast().filter { !$0.isEmpty }.map { $0.lowercased() })
+    }
+
+    private func scheduleInviteAutocomplete(for fullText: String) {
+        inviteSearchTask?.cancel()
+        inviteSearchTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            guard !Task.isCancelled else { return }
+            await refreshInviteSuggestions(for: fullText)
+        }
+    }
+
+    @MainActor
+    private func refreshInviteSuggestions(for fullText: String) async {
+        inviteAutocompleteSearching = true
+        inviteAutocompleteShowNoMatches = false
+        defer { inviteAutocompleteSearching = false }
+
+        let fragment = currentInviteeTypingFragment(from: fullText)
+        guard fragment.count >= 1 else {
+            inviteSuggestions = []
+            return
+        }
+        guard fragment.range(of: "^[a-zA-Z0-9_]*$", options: .regularExpression) != nil else {
+            inviteSuggestions = []
+            return
+        }
+
+        do {
+            var names = try await searchPlanItUsernames(prefix: fragment, limit: 12)
+            let committed = committedInviteeSet(from: fullText)
+            let selfName = globalUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+            names.removeAll { name in
+                if !selfName.isEmpty, name.caseInsensitiveCompare(selfName) == .orderedSame {
+                    return true
+                }
+                return committed.contains(name.lowercased())
+            }
+            inviteSuggestions = names
+            inviteAutocompleteShowNoMatches = names.isEmpty && fragment.count >= 2
+        } catch {
+            inviteSuggestions = []
+            inviteAutocompleteShowNoMatches = false
+            print("Invite autocomplete: \(error.localizedDescription)")
+        }
+    }
+
+    private func applyInviteeSuggestion(_ picked: String) {
+        let trimmedPick = normalizedPlanItUsername(picked)
+        guard !trimmedPick.isEmpty else { return }
+
+        var chunks = inviteesString.split(separator: ",", omittingEmptySubsequences: false).map { String($0) }
+        if chunks.isEmpty {
+            chunks = [trimmedPick]
+        } else {
+            chunks[chunks.count - 1] = trimmedPick
+        }
+        inviteesString = chunks.joined(separator: ", ") + ", "
+        inviteSuggestions = []
+        syncInviteesFromString()
     }
 }
 

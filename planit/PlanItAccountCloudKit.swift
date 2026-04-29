@@ -204,3 +204,37 @@ func upsertPlanItUser(displayUsername: String, ownerRecordName: String) async th
     }
     return trimmed
 }
+
+/// Public-directory lookup for invite autocomplete (`usernameLowercased` should be QUERYABLE in CloudKit).
+func searchPlanItUsernames(prefix rawPrefix: String, limit: Int = 10) async throws -> [String] {
+    let prefix = normalizedPlanItUsername(rawPrefix).lowercased()
+    guard !prefix.isEmpty else { return [] }
+    guard prefix.range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil else { return [] }
+
+    let database = CKContainer.default().publicCloudDatabase
+    let predicate = NSPredicate(format: "usernameLowercased BEGINSWITH %@", prefix)
+    let query = CKQuery(recordType: "PlanItUser", predicate: predicate)
+    do {
+        let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil, desiredKeys: ["username"], resultsLimit: limit)
+        var names: [String] = []
+        names.reserveCapacity(matchResults.count)
+        for (_, result) in matchResults {
+            switch result {
+            case .success(let record):
+                if let u = record["username"] as? String {
+                    let trimmed = normalizedPlanItUsername(u)
+                    if !trimmed.isEmpty {
+                        names.append(trimmed)
+                    }
+                }
+            case .failure:
+                break
+            }
+        }
+        return Array(Set(names)).sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+    } catch {
+        throw mapPlanItAccountCloudKitError(error)
+    }
+}
