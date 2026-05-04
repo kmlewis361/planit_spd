@@ -1,8 +1,6 @@
 import SwiftUI
 
 extension Notification.Name {
-    /// Posted after creating an event so `HomeView` refetches (and can merge `object` if CloudKit is briefly stale).
-    static let planitHomeEventsShouldRefresh = Notification.Name("planitHomeEventsShouldRefresh")
     /// Posted after submitting a response so `EventDetailsView` can refresh ranked times.
     static let planitEventResponsesDidChange = Notification.Name("planitEventResponsesDidChange")
 }
@@ -25,12 +23,15 @@ struct AppRoot: View {
     @State private var path = NavigationPath()
     /// Bumped whenever the stack returns to root so `HomeView` can refetch CloudKit (root views do not get `onAppear` again when a pushed screen is popped).
     @State private var homeEventsRefreshTrigger = 0
+    /// Merged into the home list after save; cleared when `HomeView` applies it (avoids racing a nil-only refresh against CloudKit eventual consistency).
+    @State private var pendingHomeListEvent: Event?
     @State private var pendingResponseForDetails: [UUID: Response] = [:]
 
     var body: some View {
         NavigationStack(path: $path) {
             HomeView(
                 homeEventsRefreshTrigger: homeEventsRefreshTrigger,
+                pendingHomeListEvent: $pendingHomeListEvent,
                 onRespond: { eventId in
                     path.append(Route.eventResponse(eventId: eventId))
                 },
@@ -69,6 +70,7 @@ struct AppRoot: View {
                 case .home:
                     HomeView(
                         homeEventsRefreshTrigger: homeEventsRefreshTrigger,
+                        pendingHomeListEvent: $pendingHomeListEvent,
                         onSeeDetails: { eventId in
                             path.removeLast(path.count)
                             path.append(Route.eventDetails(eventId: eventId))
@@ -82,12 +84,8 @@ struct AppRoot: View {
                     EventDetailsView(eventId: eventId, pendingResponse: pendingResponseForDetails[eventId])
                 case .eventCreation:
                     EventCreationView(onSend: { created in
+                        pendingHomeListEvent = created
                         path = NavigationPath()
-                        homeEventsRefreshTrigger += 1
-                        NotificationCenter.default.post(
-                            name: .planitHomeEventsShouldRefresh,
-                            object: created
-                        )
                     })
                 case .eventResponse(let eventId):
                     EventResponseView(eventId: eventId, onSubmit: { response in

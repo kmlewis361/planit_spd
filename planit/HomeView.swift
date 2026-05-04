@@ -4,6 +4,8 @@ var events: [Event] = [Event(name: "", description: "", invitees: [], duration: 
 struct HomeView: View {
     /// When this value changes (after returning to the navigation root), CloudKit is queried again.
     var homeEventsRefreshTrigger: Int = 0
+    /// Set when an event is created so the next refresh can merge it in before CloudKit lists it.
+    var pendingHomeListEvent: Binding<Event?> = .constant(nil)
 
     @State var localEvents: [Event] = events
     var onRespond: ((UUID) -> Void)? = nil
@@ -50,26 +52,24 @@ struct HomeView: View {
         .padding()
         .onAppear { print(events) }
         .task(id: homeEventsRefreshTrigger) {
-            await refreshLocalEventsFromCloudKit(prioritizing: nil)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .planitHomeEventsShouldRefresh)) { notification in
-            let pending = notification.object as? Event
-            Task { @MainActor in
-                await refreshLocalEventsFromCloudKit(prioritizing: pending)
-            }
+            await refreshLocalEventsFromCloudKit()
         }
     }
 
     @MainActor
-    private func refreshLocalEventsFromCloudKit(prioritizing pending: Event?) async {
+    private func refreshLocalEventsFromCloudKit() async {
         if globalUsername == "" {
             localEvents = events
             onLoggedOut?()
             return
         }
         var fetched = await fetchEventsFromCloudKit()
+        let pending = pendingHomeListEvent.wrappedValue
         if let pending, !fetched.contains(where: { $0.id == pending.id }) {
             fetched.insert(pending, at: 0)
+        }
+        if pending != nil {
+            pendingHomeListEvent.wrappedValue = nil
         }
         localEvents = fetched
     }
