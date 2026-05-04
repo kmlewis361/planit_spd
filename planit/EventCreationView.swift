@@ -185,7 +185,7 @@ struct EventCreationView: View {
                         .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                 )
             } else if inviteAutocompleteShowNoMatches {
-                Text("No matching PlanIt users for that prefix.")
+                Text("No matching PlanIt users for that text.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

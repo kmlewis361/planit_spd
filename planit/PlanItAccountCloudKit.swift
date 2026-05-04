@@ -86,6 +86,23 @@ func assertPlanItUsernameFormat(_ normalized: String) throws {
     }
 }
 
+/// Segments of the **lowercased** handle split on `_` (e.g. `dummy_alice_test` → `dummy`, `alice`, `test`).
+/// Stored on `PlanItUser.usernameSearchTokens` (**List of Strings**, **Queryable**) so autocomplete can use
+/// `ANY usernameSearchTokens BEGINSWITH` for segments, not only the start of the full handle.
+func planItUsernameSearchTokens(fromLowercased lowered: String) -> [String] {
+    let parts = lowered.split(separator: "_", omittingEmptySubsequences: true).map(String.init)
+    var seen = Set<String>()
+    var out: [String] = []
+    for p in parts where !seen.contains(p) {
+        seen.insert(p)
+        out.append(p)
+    }
+    if out.isEmpty, !lowered.isEmpty {
+        return [lowered]
+    }
+    return out
+}
+
 func cloudKitOwnerRecordName() async throws -> String {
     let container = CKContainer.default()
     let status = try await container.accountStatus()
@@ -180,6 +197,7 @@ func upsertPlanItUser(displayUsername: String, ownerRecordName: String) async th
         }
         existing["username"] = trimmed as CKRecordValue
         existing["usernameLowercased"] = lowered as CKRecordValue
+        existing["usernameSearchTokens"] = planItUsernameSearchTokens(fromLowercased: lowered) as CKRecordValue
         existing["ownerRecordName"] = ownerRecordName as CKRecordValue
         do {
             _ = try await database.save(existing)
@@ -196,6 +214,7 @@ func upsertPlanItUser(displayUsername: String, ownerRecordName: String) async th
     let record = CKRecord(recordType: "PlanItUser")
     record["username"] = trimmed as CKRecordValue
     record["usernameLowercased"] = lowered as CKRecordValue
+    record["usernameSearchTokens"] = planItUsernameSearchTokens(fromLowercased: lowered) as CKRecordValue
     record["ownerRecordName"] = ownerRecordName as CKRecordValue
     do {
         _ = try await database.save(record)
@@ -206,12 +225,16 @@ func upsertPlanItUser(displayUsername: String, ownerRecordName: String) async th
 }
 
 /// Public-directory lookup for invite autocomplete.
-/// - `usernameLowercased` should be **QUERYABLE** (preferred, case-insensitive prefix).
-/// - Fallback: `username BEGINSWITH` catches console-created rows that only set `username` (must be QUERYABLE for this to run).
+///
+/// Uses **`usernameLowercased BEGINSWITH`** (full handle prefix) plus **`ANY usernameSearchTokens BEGINSWITH`**
+/// on a **List of Strings** field populated from segments split on `_` (see `planItUsernameSearchTokens`).
+/// Add `usernameSearchTokens` in the CloudKit Dashboard as **List** → **Strings**, **Queryable** (Searchable is not required).
+///
+/// Existing `PlanItUser` rows without `usernameSearchTokens` are only matched by full-handle prefix until the profile is saved again (or DEBUG seed recreates them).
 func searchPlanItUsernames(prefix rawPrefix: String, limit: Int = 10) async throws -> [String] {
-    let prefix = normalizedPlanItUsername(rawPrefix).lowercased()
-    guard !prefix.isEmpty else { return [] }
-    guard prefix.range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil else { return [] }
+    let fragment = normalizedPlanItUsername(rawPrefix).lowercased()
+    guard !fragment.isEmpty else { return [] }
+    guard fragment.range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil else { return [] }
 
     let database = CKContainer.default().publicCloudDatabase
     let desiredKeys = ["username", "usernameLowercased"] as [CKRecord.FieldKey]
@@ -240,23 +263,42 @@ func searchPlanItUsernames(prefix rawPrefix: String, limit: Int = 10) async thro
         }
     }
 
-    var names: [String] = []
-    var seenLower = Set<String>()
-    let queryLower = CKQuery(recordType: "PlanItUser", predicate: NSPredicate(format: "usernameLowercased BEGINSWITH %@", prefix))
-    do {
-        let (matchResults, _) = try await database.records(matching: queryLower, inZoneWith: nil, desiredKeys: desiredKeys, resultsLimit: limit)
-        collect(from: matchResults, into: &names, seen: &seenLower)
-    } catch {
-        throw mapPlanItAccountCloudKitError(error)
+    func queryPlanItUsers(predicate: NSPredicate, resultsLimit: Int) async throws -> [(CKRecord.ID, Result<CKRecord, any Error>)] {
+        let query = CKQuery(recordType: "PlanItUser", predicate: predicate)
+        let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil, desiredKeys: desiredKeys, resultsLimit: resultsLimit)
+        return Array(matchResults)
     }
 
+    var names: [String] = []
+    var seenLower = Set<String>()
+
+    // 1) Prefix on the full lowercased handle (Queryable).
+    let beginRows = try await queryPlanItUsers(
+        predicate: NSPredicate(format: "usernameLowercased BEGINSWITH %@", fragment),
+        resultsLimit: limit
+    )
+    collect(from: beginRows, into: &names, seen: &seenLower)
+
+    // 2) Prefix on any `_`-segment (e.g. `alice` → `dummy_alice_test` when tokens include `alice`).
     if names.count < limit {
-        let queryUsername = CKQuery(recordType: "PlanItUser", predicate: NSPredicate(format: "username BEGINSWITH %@", prefix))
+        let remaining = limit - names.count
+        let tokenPred = NSPredicate(format: "ANY usernameSearchTokens BEGINSWITH %@", fragment)
+        if let tokenRows = try? await queryPlanItUsers(predicate: tokenPred, resultsLimit: remaining) {
+            collect(from: tokenRows, into: &names, seen: &seenLower)
+        }
+    }
+
+    // 3) Legacy rows that only index `username` for prefix search.
+    if names.count < limit {
+        let remaining = limit - names.count
         do {
-            let (matchResults, _) = try await database.records(matching: queryUsername, inZoneWith: nil, desiredKeys: desiredKeys, resultsLimit: limit)
-            collect(from: matchResults, into: &names, seen: &seenLower)
+            let rows = try await queryPlanItUsers(
+                predicate: NSPredicate(format: "username BEGINSWITH %@", fragment),
+                resultsLimit: remaining
+            )
+            collect(from: rows, into: &names, seen: &seenLower)
         } catch {
-            // `username` may not be QUERYABLE in the schema; primary path is enough.
+            // `username` may not be Queryable; other paths are enough.
         }
     }
 
@@ -296,6 +338,7 @@ func seedPlanItAutocompleteDummyUsersForDebug() async -> String {
             let record = CKRecord(recordType: "PlanItUser")
             record["username"] = trimmed as CKRecordValue
             record["usernameLowercased"] = lowered as CKRecordValue
+            record["usernameSearchTokens"] = planItUsernameSearchTokens(fromLowercased: lowered) as CKRecordValue
             record["ownerRecordName"] = pair.ownerRecordName as CKRecordValue
             _ = try await database.save(record)
             created.append(trimmed)
@@ -307,7 +350,7 @@ func seedPlanItAutocompleteDummyUsersForDebug() async -> String {
 
     var lines: [String] = []
     if !created.isEmpty {
-        lines.append("Created: \(created.joined(separator: ", ")). Try prefixes dummy, alice, bob, seed.")
+        lines.append("Created: \(created.joined(separator: ", ")). Add CloudKit field `usernameSearchTokens` (List of Strings, Queryable) if saves failed; try typing alice, bob, dummy, seed.")
     }
     if !skippedTaken.isEmpty {
         lines.append("Already existed (skipped): \(skippedTaken.joined(separator: ", "))")
