@@ -205,36 +205,119 @@ func upsertPlanItUser(displayUsername: String, ownerRecordName: String) async th
     return trimmed
 }
 
-/// Public-directory lookup for invite autocomplete (`usernameLowercased` should be QUERYABLE in CloudKit).
+/// Public-directory lookup for invite autocomplete.
+/// - `usernameLowercased` should be **QUERYABLE** (preferred, case-insensitive prefix).
+/// - Fallback: `username BEGINSWITH` catches console-created rows that only set `username` (must be QUERYABLE for this to run).
 func searchPlanItUsernames(prefix rawPrefix: String, limit: Int = 10) async throws -> [String] {
     let prefix = normalizedPlanItUsername(rawPrefix).lowercased()
     guard !prefix.isEmpty else { return [] }
     guard prefix.range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil else { return [] }
 
     let database = CKContainer.default().publicCloudDatabase
-    let predicate = NSPredicate(format: "usernameLowercased BEGINSWITH %@", prefix)
-    let query = CKQuery(recordType: "PlanItUser", predicate: predicate)
-    do {
-        let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil, desiredKeys: ["username"], resultsLimit: limit)
-        var names: [String] = []
-        names.reserveCapacity(matchResults.count)
+    let desiredKeys = ["username", "usernameLowercased"] as [CKRecord.FieldKey]
+
+    func displayName(from record: CKRecord) -> String? {
+        if let u = record["username"] as? String {
+            let t = normalizedPlanItUsername(u)
+            if !t.isEmpty { return t }
+        }
+        if let u = record["usernameLowercased"] as? String {
+            let t = normalizedPlanItUsername(u)
+            if !t.isEmpty { return t }
+        }
+        return nil
+    }
+
+    func collect(from matchResults: [(CKRecord.ID, Result<CKRecord, any Error>)], into names: inout [String], seen: inout Set<String>) {
         for (_, result) in matchResults {
-            switch result {
-            case .success(let record):
-                if let u = record["username"] as? String {
-                    let trimmed = normalizedPlanItUsername(u)
-                    if !trimmed.isEmpty {
-                        names.append(trimmed)
-                    }
-                }
-            case .failure:
-                break
-            }
+            guard case .success(let record) = result else { continue }
+            guard let trimmed = displayName(from: record) else { continue }
+            let key = trimmed.lowercased()
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            names.append(trimmed)
+            if names.count >= limit { break }
         }
-        return Array(Set(names)).sorted {
-            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-        }
+    }
+
+    var names: [String] = []
+    var seenLower = Set<String>()
+    let queryLower = CKQuery(recordType: "PlanItUser", predicate: NSPredicate(format: "usernameLowercased BEGINSWITH %@", prefix))
+    do {
+        let (matchResults, _) = try await database.records(matching: queryLower, inZoneWith: nil, desiredKeys: desiredKeys, resultsLimit: limit)
+        collect(from: matchResults, into: &names, seen: &seenLower)
     } catch {
         throw mapPlanItAccountCloudKitError(error)
     }
+
+    if names.count < limit {
+        let queryUsername = CKQuery(recordType: "PlanItUser", predicate: NSPredicate(format: "username BEGINSWITH %@", prefix))
+        do {
+            let (matchResults, _) = try await database.records(matching: queryUsername, inZoneWith: nil, desiredKeys: desiredKeys, resultsLimit: limit)
+            collect(from: matchResults, into: &names, seen: &seenLower)
+        } catch {
+            // `username` may not be QUERYABLE in the schema; primary path is enough.
+        }
+    }
+
+    return names.sorted {
+        $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+    }
 }
+
+#if DEBUG
+/// Inserts a few `PlanItUser` rows in the **public** CloudKit database so invite autocomplete has matches.
+/// Skips usernames that are already taken. `ownerRecordName` values are synthetic and never match a real iCloud user.
+func seedPlanItAutocompleteDummyUsersForDebug() async -> String {
+    let database = CKContainer.default().publicCloudDatabase
+    let dummies: [(ownerRecordName: String, username: String)] = [
+        ("__planit_seed_owner_01", "dummy_alice_test"),
+        ("__planit_seed_owner_02", "dummy_bob_smith"),
+        ("__planit_seed_owner_03", "seed_charlie_dev"),
+    ]
+    var created: [String] = []
+    var skippedTaken: [String] = []
+    var failures: [String] = []
+
+    for pair in dummies {
+        let trimmed = normalizedPlanItUsername(pair.username)
+        do {
+            try assertPlanItUsernameFormat(trimmed)
+        } catch {
+            failures.append("\(pair.username): invalid format")
+            continue
+        }
+        let lowered = trimmed.lowercased()
+        do {
+            guard try await isPlanItUsernameAvailable(usernameLowercased: lowered, excludingOwnerRecordName: nil) else {
+                skippedTaken.append(trimmed)
+                continue
+            }
+            let record = CKRecord(recordType: "PlanItUser")
+            record["username"] = trimmed as CKRecordValue
+            record["usernameLowercased"] = lowered as CKRecordValue
+            record["ownerRecordName"] = pair.ownerRecordName as CKRecordValue
+            _ = try await database.save(record)
+            created.append(trimmed)
+        } catch {
+            let mapped = mapPlanItAccountCloudKitError(error)
+            failures.append("\(trimmed): \(mapped.localizedDescription)")
+        }
+    }
+
+    var lines: [String] = []
+    if !created.isEmpty {
+        lines.append("Created: \(created.joined(separator: ", ")). Try prefixes dummy, alice, bob, seed.")
+    }
+    if !skippedTaken.isEmpty {
+        lines.append("Already existed (skipped): \(skippedTaken.joined(separator: ", "))")
+    }
+    if !failures.isEmpty {
+        lines.append(failures.joined(separator: " · "))
+    }
+    if lines.isEmpty {
+        return "Nothing to do."
+    }
+    return lines.joined(separator: "\n")
+}
+#endif

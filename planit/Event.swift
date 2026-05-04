@@ -12,6 +12,7 @@ struct Event: Identifiable {
 
     var name: String
     var description: String
+    /// Invitees; index `0` is always the organizer’s PlanIt username (set when creating an event).
     var invitees: [String]
     var duration: TimeInterval
     /// Time blocks proposed by the event creator (the grid the invitees can choose from).

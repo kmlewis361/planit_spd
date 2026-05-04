@@ -19,6 +19,9 @@ struct EventCreationView: View {
     @State private var inviteAutocompleteSearching = false
     @State private var inviteAutocompleteShowNoMatches = false
     @State private var proposedTimes: Set<Time> = []
+    #if DEBUG
+    @State private var debugPlanItSeedStatus: String?
+    #endif
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
@@ -46,6 +49,18 @@ struct EventCreationView: View {
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
+                if !organizerPlanItUsername.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Organizer (you):")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(organizerPlanItUsername)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 inviteesAutocompleteSection
 
                 Text("Propose times:")
@@ -62,7 +77,7 @@ struct EventCreationView: View {
 //            var invitees: [String]
 //            var duration: TimeInterval
 //            var bestTime: Time
-        //    var bestLocation: String
+//            var bestLocation: String
 //            var responses: [Response]
                 Button("Send it!") {
                     //TODO add functionality for actually sending the event to the backend and stuff
@@ -120,7 +135,7 @@ struct EventCreationView: View {
 
     private var inviteesAutocompleteSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Enter usernames (comma-separated)", text: $inviteesString)
+            TextField("Invite others (comma-separated, optional)", text: $inviteesString)
                 .font(.body)
                 .foregroundStyle(.primary)
                 .textInputAutocapitalization(.never)
@@ -174,11 +189,13 @@ struct EventCreationView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            #if DEBUG
+            debugAutocompleteSeedControls
+            #endif
         }
         .onAppear {
-            if inviteesString.isEmpty, !event.invitees.isEmpty {
-                inviteesString = event.invitees.joined(separator: ", ")
-            }
+            hydrateAdditionalInviteesFieldFromEvent()
             syncInviteesFromString()
         }
         .onChange(of: inviteesString) { _, newValue in
@@ -188,17 +205,70 @@ struct EventCreationView: View {
         }
     }
 
+    #if DEBUG
+    @ViewBuilder
+    private var debugAutocompleteSeedControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button("Insert CloudKit test users (DEBUG)") {
+                Task {
+                    let message = await seedPlanItAutocompleteDummyUsersForDebug()
+                    await MainActor.run { debugPlanItSeedStatus = message }
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            if let debugPlanItSeedStatus {
+                Text(debugPlanItSeedStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 4)
+    }
+    #endif
+
     private func encodeProposedTimesForCloudKit(_ times: Set<Time>) -> Data? {
         // CloudKit can store `Data` directly; encoding keeps the schema simple.
         let sorted = times.sorted { $0.startTime < $1.startTime }
         return try? JSONEncoder().encode(sorted)
     }
 
+    /// Normalized signed-in user; stored as `event.invitees[0]` (organizer).
+    private var organizerPlanItUsername: String {
+        normalizedPlanItUsername(globalUsername)
+    }
+
+    /// `inviteesString` holds everyone except the organizer; `event.invitees` is `[organizer] + extras`.
     private func syncInviteesFromString() {
-        event.invitees = inviteesString
+        let org = organizerPlanItUsername
+        var extras = inviteesString
             .split(separator: ",")
             .map { normalizedPlanItUsername(String($0)) }
             .filter { !$0.isEmpty }
+        if !org.isEmpty {
+            extras.removeAll { $0.caseInsensitiveCompare(org) == .orderedSame }
+        }
+        if org.isEmpty {
+            event.invitees = extras
+        } else {
+            event.invitees = [org] + extras
+        }
+    }
+
+    /// Loads the text field from `event.invitees`, stripping the leading organizer row when present.
+    private func hydrateAdditionalInviteesFieldFromEvent() {
+        let org = organizerPlanItUsername
+        guard inviteesString.isEmpty, !event.invitees.isEmpty else {
+            return
+        }
+        if !org.isEmpty,
+           let first = event.invitees.first,
+           first.caseInsensitiveCompare(org) == .orderedSame {
+            inviteesString = event.invitees.dropFirst().joined(separator: ", ")
+        } else {
+            inviteesString = event.invitees.joined(separator: ", ")
+        }
     }
 
     private func currentInviteeTypingFragment(from fullText: String) -> String {
@@ -240,9 +310,9 @@ struct EventCreationView: View {
         do {
             var names = try await searchPlanItUsernames(prefix: fragment, limit: 12)
             let committed = committedInviteeSet(from: fullText)
-            let selfName = globalUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+            let org = organizerPlanItUsername
             names.removeAll { name in
-                if !selfName.isEmpty, name.caseInsensitiveCompare(selfName) == .orderedSame {
+                if !org.isEmpty, name.caseInsensitiveCompare(org) == .orderedSame {
                     return true
                 }
                 return committed.contains(name.lowercased())
