@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct TimeGridSelectionView: View {
     @Binding var selectedTimes: Set<Time>
@@ -18,8 +19,13 @@ struct TimeGridSelectionView: View {
     /// 0 = the week that contains today; +1 = next week, −1 = previous.
     @State private var weekOffset: Int = 0
 
+    /// Bumped to re-align `UIScrollView` content to `initialScrollRowIndex` (replaces `ScrollViewProxy`).
+    @State private var scrollPulse: Int = 0
+
     @State private var dragMode: DragMode? = nil
     @State private var dragVisited: Set<Time> = []
+    /// Avoid treating finger-up after a paint drag as a discrete tap toggle.
+    @State private var suppressTapSelectionUntil: Date?
 
     private enum DragMode { case selecting, deselecting }
 
@@ -88,51 +94,50 @@ struct TimeGridSelectionView: View {
 
                 VStack(spacing: 0) {
                     headerRow(cellWidth: cellWidth, timeLabelWidth: timeLabelWidth, height: headerHeight)
-                    ScrollViewReader { proxy in
-                        let gridOnlyWidth = cellWidth * CGFloat(daysToShow)
-                        let scrollContentHeight = CGFloat(slotsPerDay) * scrollRowHeight
-
-                        ScrollView(.vertical, showsIndicators: true) {
-                            ZStack(alignment: .topLeading) {
-                                VStack(spacing: 0) {
-                                    ForEach(0..<slotsPerDay, id: \.self) { row in
-                                        gridRow(row: row, cellWidth: cellWidth, timeLabelWidth: timeLabelWidth)
-                                            .frame(height: scrollRowHeight)
-                                            .id(row)
-                                    }
+                    TimeGridScrollContainer(
+                        contentHeight: CGFloat(slotsPerDay) * scrollRowHeight,
+                        rowHeight: scrollRowHeight,
+                        scrollPulse: scrollPulse,
+                        scrollTargetRow: initialScrollRowIndex,
+                        handleTap: { point in
+                            handleSlotTap(
+                                at: point,
+                                timeLabelWidth: timeLabelWidth,
+                                cellWidth: cellWidth,
+                                cellHeight: scrollRowHeight
+                            )
+                        },
+                        handlePaint: { point in
+                            handlePaintDrag(
+                                at: point,
+                                timeLabelWidth: timeLabelWidth,
+                                cellWidth: cellWidth,
+                                cellHeight: scrollRowHeight
+                            )
+                        },
+                        handlePaintEnd: {
+                            dragMode = nil
+                            dragVisited.removeAll()
+                        }
+                    ) {
+                        ZStack(alignment: .topLeading) {
+                            VStack(spacing: 0) {
+                                ForEach(0..<slotsPerDay, id: \.self) { row in
+                                    gridRow(row: row, cellWidth: cellWidth, timeLabelWidth: timeLabelWidth)
+                                        .frame(height: scrollRowHeight)
                                 }
-
-                                // Drag-to-paint only over day columns; drags on the time gutter scroll normally.
-                                Color.clear
-                                    .frame(width: gridOnlyWidth, height: scrollContentHeight)
-                                    .contentShape(Rectangle())
-                                    .offset(x: timeLabelWidth)
-                                    .accessibilityHidden(true)
-                                    .gesture(
-                                        DragGesture(minimumDistance: 0)
-                                            .onChanged { value in
-                                                handlePaintDrag(
-                                                    at: value.location,
-                                                    cellWidth: cellWidth,
-                                                    cellHeight: scrollRowHeight
-                                                )
-                                            }
-                                            .onEnded { _ in
-                                                dragMode = nil
-                                                dragVisited.removeAll()
-                                            }
-                                    )
                             }
                         }
-                        .onAppear {
-                            scheduleScrollToInitialHour(proxy)
-                        }
-                        .onChange(of: weekOffset) { _, _ in
-                            scheduleScrollToInitialHour(proxy)
-                        }
-                        .onChange(of: allowedSlotsFingerprint) { _, _ in
-                            scheduleScrollToInitialHour(proxy)
-                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .onAppear {
+                        scheduleScrollToInitialHour()
+                    }
+                    .onChange(of: weekOffset) { _, _ in
+                        scheduleScrollToInitialHour()
+                    }
+                    .onChange(of: allowedSlotsFingerprint) { _, _ in
+                        scheduleScrollToInitialHour()
                     }
                 }
             }
@@ -151,10 +156,9 @@ struct TimeGridSelectionView: View {
         }
     }
 
-    private func scheduleScrollToInitialHour(_ proxy: ScrollViewProxy) {
-        let row = initialScrollRowIndex
+    private func scheduleScrollToInitialHour() {
         DispatchQueue.main.async {
-            proxy.scrollTo(row, anchor: .top)
+            scrollPulse += 1
         }
     }
 
@@ -180,9 +184,9 @@ struct TimeGridSelectionView: View {
         }
     }
 
-    /// Location is in the overlay’s coordinate space (origin top-left of the day grid only).
-    private func slotInGrid(at location: CGPoint, cellWidth: CGFloat, cellHeight: CGFloat) -> Time? {
-        let x = location.x
+    /// Location is in the overlay’s coordinate space (full grid row width including the time gutter).
+    private func slotInGrid(at location: CGPoint, timeLabelWidth: CGFloat, cellWidth: CGFloat, cellHeight: CGFloat) -> Time? {
+        let x = location.x - timeLabelWidth
         let y = location.y
         guard x >= 0, y >= 0 else { return nil }
         let dayIndex = Int(floor(x / cellWidth))
@@ -191,8 +195,24 @@ struct TimeGridSelectionView: View {
         return slot(forDay: dayIndex, row: row)
     }
 
-    private func handlePaintDrag(at location: CGPoint, cellWidth: CGFloat, cellHeight: CGFloat) {
-        guard let slot = slotInGrid(at: location, cellWidth: cellWidth, cellHeight: cellHeight) else {
+    private func handleSlotTap(at location: CGPoint, timeLabelWidth: CGFloat, cellWidth: CGFloat, cellHeight: CGFloat) {
+        if let until = suppressTapSelectionUntil {
+            if Date() < until { return }
+            suppressTapSelectionUntil = nil
+        }
+        guard let slot = slotInGrid(at: location, timeLabelWidth: timeLabelWidth, cellWidth: cellWidth, cellHeight: cellHeight) else {
+            return
+        }
+        if let allowedSlots, !allowedSlots.contains(slot) { return }
+        if selectedTimes.contains(slot) {
+            selectedTimes.remove(slot)
+        } else {
+            selectedTimes.insert(slot)
+        }
+    }
+
+    private func handlePaintDrag(at location: CGPoint, timeLabelWidth: CGFloat, cellWidth: CGFloat, cellHeight: CGFloat) {
+        guard let slot = slotInGrid(at: location, timeLabelWidth: timeLabelWidth, cellWidth: cellWidth, cellHeight: cellHeight) else {
             return
         }
         if let allowedSlots, !allowedSlots.contains(slot) { return }
@@ -202,6 +222,8 @@ struct TimeGridSelectionView: View {
         }
         if dragVisited.contains(slot) { return }
         dragVisited.insert(slot)
+        // Refresh through drag so finger-up cannot fire SpatialTap before suppression exists (gesture end order is undefined).
+        suppressTapSelectionUntil = Date().addingTimeInterval(0.35)
         switch dragMode {
         case .selecting:
             selectedTimes.insert(slot)
@@ -382,5 +404,146 @@ struct TimeGridSelectionView: View {
         let cal = Calendar.current
         let date = cal.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
         return date.formatted(.dateTime.hour().minute())
+    }
+}
+
+// MARK: - UIKit scroll host (SwiftUI ScrollView + Drag/LongPress reliably blocks scrolling)
+
+private final class TimeGridScrollCoordinator: NSObject, UIGestureRecognizerDelegate {
+    weak var scrollView: UIScrollView?
+    var hostingController: UIHostingController<AnyView>?
+
+    let rowHeight: CGFloat
+
+    var onTap: ((CGPoint) -> Void)?
+    var onPaint: ((CGPoint) -> Void)?
+    var onPaintEnd: (() -> Void)?
+
+    var lastScrollPulse: Int = -1
+
+    private var paintingLocksScroll = false
+
+    init(rowHeight: CGFloat) {
+        self.rowHeight = rowHeight
+    }
+
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    @objc func handleTap(_ g: UITapGestureRecognizer) {
+        guard let v = hostingController?.view else { return }
+        onTap?(g.location(in: v))
+    }
+
+    @objc func handleLongPress(_ g: UILongPressGestureRecognizer) {
+        guard let sv = scrollView, let v = hostingController?.view else { return }
+        let p = g.location(in: v)
+        switch g.state {
+        case .began:
+            paintingLocksScroll = true
+            sv.isScrollEnabled = false
+            onPaint?(p)
+        case .changed:
+            onPaint?(p)
+        case .ended, .cancelled, .failed:
+            if paintingLocksScroll {
+                paintingLocksScroll = false
+                sv.isScrollEnabled = true
+            }
+            onPaintEnd?()
+        default:
+            break
+        }
+    }
+
+    func applyScroll(scrollView: UIScrollView, row: Int) {
+        scrollView.layoutIfNeeded()
+        guard scrollView.bounds.height > 1 else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.applyScroll(scrollView: scrollView, row: row)
+            }
+            return
+        }
+        let y = CGFloat(row) * rowHeight
+        let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        let clamped = min(max(0, y), maxY)
+        scrollView.setContentOffset(CGPoint(x: 0, y: clamped), animated: false)
+    }
+}
+
+private struct TimeGridScrollContainer<Content: View>: UIViewRepresentable {
+    let contentHeight: CGFloat
+    let rowHeight: CGFloat
+    var scrollPulse: Int
+    var scrollTargetRow: Int
+
+    let handleTap: (CGPoint) -> Void
+    let handlePaint: (CGPoint) -> Void
+    let handlePaintEnd: () -> Void
+
+    @ViewBuilder var content: () -> Content
+
+    func makeCoordinator() -> TimeGridScrollCoordinator {
+        TimeGridScrollCoordinator(rowHeight: rowHeight)
+    }
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let coordinator = context.coordinator
+        let sv = UIScrollView()
+        coordinator.scrollView = sv
+        sv.alwaysBounceVertical = true
+        sv.showsVerticalScrollIndicator = true
+        sv.backgroundColor = .clear
+        sv.delaysContentTouches = false
+        sv.canCancelContentTouches = true
+
+        let hc = UIHostingController(rootView: AnyView(content()))
+        hc.view.backgroundColor = .clear
+        hc.view.translatesAutoresizingMaskIntoConstraints = false
+        coordinator.hostingController = hc
+
+        sv.addSubview(hc.view)
+
+        NSLayoutConstraint.activate([
+            hc.view.leadingAnchor.constraint(equalTo: sv.contentLayoutGuide.leadingAnchor),
+            hc.view.trailingAnchor.constraint(equalTo: sv.contentLayoutGuide.trailingAnchor),
+            hc.view.topAnchor.constraint(equalTo: sv.contentLayoutGuide.topAnchor),
+            hc.view.bottomAnchor.constraint(equalTo: sv.contentLayoutGuide.bottomAnchor),
+            hc.view.widthAnchor.constraint(equalTo: sv.frameLayoutGuide.widthAnchor),
+            hc.view.heightAnchor.constraint(equalToConstant: contentHeight),
+        ])
+
+        let tap = UITapGestureRecognizer(target: coordinator, action: #selector(TimeGridScrollCoordinator.handleTap(_:)))
+        tap.delegate = coordinator
+        sv.addGestureRecognizer(tap)
+
+        let longPress = UILongPressGestureRecognizer(target: coordinator, action: #selector(TimeGridScrollCoordinator.handleLongPress(_:)))
+        longPress.minimumPressDuration = 0.36
+        longPress.allowableMovement = 14
+        longPress.delegate = coordinator
+        sv.addGestureRecognizer(longPress)
+
+        coordinator.onTap = handleTap
+        coordinator.onPaint = handlePaint
+        coordinator.onPaintEnd = handlePaintEnd
+
+        return sv
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.hostingController?.rootView = AnyView(content())
+        coordinator.onTap = handleTap
+        coordinator.onPaint = handlePaint
+        coordinator.onPaintEnd = handlePaintEnd
+
+        if coordinator.lastScrollPulse != scrollPulse {
+            coordinator.lastScrollPulse = scrollPulse
+            DispatchQueue.main.async {
+                coordinator.applyScroll(scrollView: scrollView, row: scrollTargetRow)
+            }
+        }
     }
 }
