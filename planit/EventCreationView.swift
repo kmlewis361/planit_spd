@@ -96,11 +96,15 @@ struct EventCreationView: View {
                         bestTime: event.bestTime,
                         responses: event.responses
                     )
+                    let inviteesForCloudKit = createdEvent.invitees
+                        .map { normalizedPlanItUsername($0).lowercased() }
+                        .filter { !$0.isEmpty }
                     record.setValuesForKeys([
                         "id": event.id.uuidString,
                         "name": event.name,
                         "description": event.description,
                         "proposedTimesData": proposedTimesData as Any,
+                        "invitees": inviteesForCloudKit as NSArray,
                     ])
 
                     CKContainer.default().accountStatus { accountStatus, error in

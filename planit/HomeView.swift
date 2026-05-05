@@ -63,9 +63,10 @@ struct HomeView: View {
             onLoggedOut?()
             return
         }
-        var fetched = await fetchEventsFromCloudKit()
+        let me = normalizedPlanItUsername(globalUsername).lowercased()
+        var fetched = await fetchEventsFromCloudKit(whereInviteeUsernameLowercased: me)
         let pending = pendingHomeListEvent.wrappedValue
-        if let pending, !fetched.contains(where: { $0.id == pending.id }) {
+        if let pending, !fetched.contains(where: { $0.id == pending.id }), eventIncludesInviteeLowercased(pending, usernameLowercased: me) {
             fetched.insert(pending, at: 0)
         }
         if pending != nil {

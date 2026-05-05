@@ -72,9 +72,12 @@ func fetchEventFromId(idString: String) async -> Event? {
     }
 }
 
-func fetchEventsFromCloudKit() async -> [Event] {
+/// Loads events where the signed-in PlanIt user appears in `invitees` (CloudKit **List** of **Strings**, lowercased; **Queryable** with `ANY invitees ==`).
+func fetchEventsFromCloudKit(whereInviteeUsernameLowercased usernameLowercased: String) async -> [Event] {
+    guard !usernameLowercased.isEmpty else { return [] }
     let database = CKContainer.default().publicCloudDatabase
-    let query = CKQuery(recordType: "Event", predicate: NSPredicate(value: true))
+    let predicate = NSPredicate(format: "ANY invitees == %@", usernameLowercased)
+    let query = CKQuery(recordType: "Event", predicate: predicate)
     do {
         let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil)
         var events: [Event] = []
@@ -90,9 +93,19 @@ func fetchEventsFromCloudKit() async -> [Event] {
         }
         return events
     } catch {
-        print("CloudKit query failed: \(error.localizedDescription)")
+        print("CloudKit events-for-invitee query failed: \(error.localizedDescription)")
         return []
     }
+}
+
+private func stringList(from record: CKRecord, key: String) -> [String] {
+    if let raw = record[key] as? [String] {
+        return raw
+    }
+    if let ns = record[key] as? NSArray {
+        return ns.compactMap { $0 as? String }
+    }
+    return []
 }
 
 func event(from record: CKRecord) -> Event {
@@ -102,14 +115,23 @@ func event(from record: CKRecord) -> Event {
     let description = (record["description"] as? String) ?? ""
     let proposedTimesData = record["proposedTimesData"] as? Data
     let proposedTimes = proposedTimesData.flatMap { try? JSONDecoder().decode([Time].self, from: $0) } ?? []
+    let invitees = stringList(from: record, key: "invitees")
     return Event(
         id: id,
         name: name,
         description: description,
-        invitees: [],
+        invitees: invitees,
         duration: 0,
         proposedTimes: proposedTimes,
         bestTime: Time(startTime: Date(), endTime: Date()),
         responses: []
     )
+}
+
+/// True if `usernameLowercased` matches any invitee (after trim + lowercasing).
+func eventIncludesInviteeLowercased(_ event: Event, usernameLowercased: String) -> Bool {
+    guard !usernameLowercased.isEmpty else { return false }
+    return event.invitees.contains {
+        normalizedPlanItUsername($0).lowercased() == usernameLowercased
+    }
 }
