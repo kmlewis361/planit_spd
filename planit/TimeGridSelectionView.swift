@@ -6,19 +6,22 @@ struct TimeGridSelectionView: View {
     private let allowedSlots: Set<Time>?
 
     private let daysToShow: Int
+    /// First slot of each day starts at this hour (e.g. `0` = midnight).
     private let startHour: Int
+    /// Hour **after** the last slot starts (e.g. `24` = slots through 23:30–24:00).
     private let endHour: Int
+    /// Scroll view initially aligns so this hour is near the top (e.g. `8` = 8:00).
+    private let initialVisibleHour: Int
     private let slotMinutes: Int
     private let height: CGFloat
 
-    @State private var dragMode: DragMode? = nil
-    @State private var dragVisited: Set<Time> = []
     /// 0 = the week that contains today; +1 = next week, −1 = previous.
     @State private var weekOffset: Int = 0
 
-    private enum DragMode { case selecting, deselecting }
+    @State private var dragMode: DragMode? = nil
+    @State private var dragVisited: Set<Time> = []
 
-    private var slotsPerDay: Int { ((endHour - startHour) * 60) / slotMinutes }
+    private enum DragMode { case selecting, deselecting }
 
     /// When non-zero, `allowedSlots` changed — reclamp week navigation for event response.
     private var allowedSlotsFingerprint: Int {
@@ -34,13 +37,34 @@ struct TimeGridSelectionView: View {
 
     private let weekNavHeight: CGFloat = 40
     private let headerHeight: CGFloat = 40
+    /// Fixed row height inside the scroll view (full day uses many rows).
+    private let scrollRowHeight: CGFloat = 22
+
+    // MARK: Grid contrast (readable but lighter borders than the previous pass)
+    private var gridLineColor: Color { Color.primary.opacity(0.17) }
+    private let gridCellStrokeWidth: CGFloat = 0.5
+    private var gridChromeBackground: Color { Color.primary.opacity(0.065) }
+    private var gridAvailableSlotFill: Color { Color.primary.opacity(0.035) }
+    private var gridDisabledSlotFill: Color { Color.primary.opacity(0.12) }
+    private var gridSelectedSlotFill: Color { Color.accentColor.opacity(0.38) }
+    private var timeLabelColor: Color { Color.primary.opacity(0.68) }
+    private var headerSecondaryTextColor: Color { Color.primary.opacity(0.52) }
+
+    private var slotsPerDay: Int { max(1, ((endHour - startHour) * 60) / slotMinutes) }
+
+    /// Row index whose **start** time is `initialVisibleHour` (clamped).
+    private var initialScrollRowIndex: Int {
+        let row = (initialVisibleHour - startHour) * 60 / slotMinutes
+        return min(max(0, row), slotsPerDay - 1)
+    }
 
     init(
         selectedTimes: Binding<Set<Time>>,
         allowedSlots: Set<Time>? = nil,
         daysToShow: Int = 7,
-        startHour: Int = 8,
-        endHour: Int = 20,
+        startHour: Int = 0,
+        endHour: Int = 24,
+        initialVisibleHour: Int = 8,
         slotMinutes: Int = 30,
         height: CGFloat = 320
     ) {
@@ -49,6 +73,7 @@ struct TimeGridSelectionView: View {
         self.daysToShow = daysToShow
         self.startHour = startHour
         self.endHour = endHour
+        self.initialVisibleHour = initialVisibleHour
         self.slotMinutes = slotMinutes
         self.height = height
     }
@@ -60,54 +85,130 @@ struct TimeGridSelectionView: View {
             GeometryReader { geo in
                 let timeLabelWidth: CGFloat = 56
                 let cellWidth = max(1, (geo.size.width - timeLabelWidth) / CGFloat(daysToShow))
-                let slotRows = max(1, slotsPerDay)
-                let cellHeight = max(18, (geo.size.height - headerHeight) / CGFloat(slotRows))
 
                 VStack(spacing: 0) {
                     headerRow(cellWidth: cellWidth, timeLabelWidth: timeLabelWidth, height: headerHeight)
-                    gridBody(cellWidth: cellWidth, cellHeight: cellHeight, timeLabelWidth: timeLabelWidth)
+                    ScrollViewReader { proxy in
+                        let gridOnlyWidth = cellWidth * CGFloat(daysToShow)
+                        let scrollContentHeight = CGFloat(slotsPerDay) * scrollRowHeight
+
+                        ScrollView(.vertical, showsIndicators: true) {
+                            ZStack(alignment: .topLeading) {
+                                VStack(spacing: 0) {
+                                    ForEach(0..<slotsPerDay, id: \.self) { row in
+                                        gridRow(row: row, cellWidth: cellWidth, timeLabelWidth: timeLabelWidth)
+                                            .frame(height: scrollRowHeight)
+                                            .id(row)
+                                    }
+                                }
+
+                                // Drag-to-paint only over day columns; drags on the time gutter scroll normally.
+                                Color.clear
+                                    .frame(width: gridOnlyWidth, height: scrollContentHeight)
+                                    .contentShape(Rectangle())
+                                    .offset(x: timeLabelWidth)
+                                    .accessibilityHidden(true)
+                                    .gesture(
+                                        DragGesture(minimumDistance: 0)
+                                            .onChanged { value in
+                                                handlePaintDrag(
+                                                    at: value.location,
+                                                    cellWidth: cellWidth,
+                                                    cellHeight: scrollRowHeight
+                                                )
+                                            }
+                                            .onEnded { _ in
+                                                dragMode = nil
+                                                dragVisited.removeAll()
+                                            }
+                                    )
+                            }
+                        }
+                        .onAppear {
+                            scheduleScrollToInitialHour(proxy)
+                        }
+                        .onChange(of: weekOffset) { _, _ in
+                            scheduleScrollToInitialHour(proxy)
+                        }
+                        .onChange(of: allowedSlotsFingerprint) { _, _ in
+                            scheduleScrollToInitialHour(proxy)
+                        }
+                    }
                 }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard let slot = slot(at: value.location, timeLabelWidth: timeLabelWidth, headerHeight: headerHeight, cellWidth: cellWidth, cellHeight: cellHeight) else {
-                                return
-                            }
-                            if let allowedSlots, !allowedSlots.contains(slot) { return }
-                            if dragMode == nil {
-                                dragMode = selectedTimes.contains(slot) ? .deselecting : .selecting
-                                dragVisited.removeAll()
-                            }
-                            if dragVisited.contains(slot) { return }
-                            dragVisited.insert(slot)
-                            switch dragMode {
-                            case .selecting:
-                                selectedTimes.insert(slot)
-                            case .deselecting:
-                                selectedTimes.remove(slot)
-                            case .none:
-                                break
-                            }
-                        }
-                        .onEnded { _ in
-                            dragMode = nil
-                            dragVisited.removeAll()
-                        }
-                )
             }
         }
         .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
         )
         .onAppear {
             clampWeekOffsetToAllowedRangeIfNeeded()
         }
         .onChange(of: allowedSlotsFingerprint) { _, _ in
             clampWeekOffsetToAllowedRangeIfNeeded()
+        }
+    }
+
+    private func scheduleScrollToInitialHour(_ proxy: ScrollViewProxy) {
+        let row = initialScrollRowIndex
+        DispatchQueue.main.async {
+            proxy.scrollTo(row, anchor: .top)
+        }
+    }
+
+    private func gridRow(row: Int, cellWidth: CGFloat, timeLabelWidth: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            Text(timeLabel(forRow: row))
+                .font(.caption2)
+                .foregroundStyle(timeLabelColor)
+                .frame(width: timeLabelWidth, height: scrollRowHeight, alignment: .trailing)
+                .padding(.trailing, 6)
+                .contentShape(Rectangle())
+
+            ForEach(0..<daysToShow, id: \.self) { dayIndex in
+                let slot = slot(forDay: dayIndex, row: row)
+                Rectangle()
+                    .fill(fillColor(for: slot))
+                    .frame(width: cellWidth, height: scrollRowHeight)
+                    .overlay(
+                        Rectangle()
+                            .stroke(gridLineColor, lineWidth: gridCellStrokeWidth)
+                    )
+            }
+        }
+    }
+
+    /// Location is in the overlay’s coordinate space (origin top-left of the day grid only).
+    private func slotInGrid(at location: CGPoint, cellWidth: CGFloat, cellHeight: CGFloat) -> Time? {
+        let x = location.x
+        let y = location.y
+        guard x >= 0, y >= 0 else { return nil }
+        let dayIndex = Int(floor(x / cellWidth))
+        let row = Int(floor(y / cellHeight))
+        guard (0..<daysToShow).contains(dayIndex), (0..<slotsPerDay).contains(row) else { return nil }
+        return slot(forDay: dayIndex, row: row)
+    }
+
+    private func handlePaintDrag(at location: CGPoint, cellWidth: CGFloat, cellHeight: CGFloat) {
+        guard let slot = slotInGrid(at: location, cellWidth: cellWidth, cellHeight: cellHeight) else {
+            return
+        }
+        if let allowedSlots, !allowedSlots.contains(slot) { return }
+        if dragMode == nil {
+            dragMode = selectedTimes.contains(slot) ? .deselecting : .selecting
+            dragVisited.removeAll()
+        }
+        if dragVisited.contains(slot) { return }
+        dragVisited.insert(slot)
+        switch dragMode {
+        case .selecting:
+            selectedTimes.insert(slot)
+        case .deselecting:
+            selectedTimes.remove(slot)
+        case .none:
+            break
         }
     }
 
@@ -156,7 +257,7 @@ struct TimeGridSelectionView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(prevDisabled ? Color.secondary.opacity(0.35) : .primary)
+            .foregroundStyle(prevDisabled ? Color.primary.opacity(0.38) : .primary)
             .disabled(prevDisabled)
             .accessibilityLabel("Previous week")
 
@@ -179,12 +280,12 @@ struct TimeGridSelectionView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(nextDisabled ? Color.secondary.opacity(0.35) : .primary)
+            .foregroundStyle(nextDisabled ? Color.primary.opacity(0.38) : .primary)
             .disabled(nextDisabled)
             .accessibilityLabel("Next week")
         }
         .padding(.horizontal, 8)
-        .background(Color.secondary.opacity(0.06))
+        .background(gridChromeBackground)
     }
 
     private func weekRangeTitle(start: Date, end: Date, calendar: Calendar) -> String {
@@ -225,46 +326,22 @@ struct TimeGridSelectionView: View {
                         .foregroundStyle(todayColumn ? Color.accentColor : .primary)
                     Text(calendarDateLine(for: dayIndex))
                         .font(.caption2)
-                        .foregroundStyle(todayColumn ? Color.accentColor.opacity(0.9) : .secondary)
+                        .foregroundStyle(todayColumn ? Color.accentColor.opacity(0.95) : headerSecondaryTextColor)
                 }
                 .frame(width: cellWidth, height: height)
             }
         }
-        .background(Color.secondary.opacity(0.06))
-    }
-
-    private func gridBody(cellWidth: CGFloat, cellHeight: CGFloat, timeLabelWidth: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            ForEach(0..<slotsPerDay, id: \.self) { row in
-                HStack(spacing: 0) {
-                    Text(timeLabel(forRow: row))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: timeLabelWidth, height: cellHeight, alignment: .trailing)
-                        .padding(.trailing, 6)
-                    ForEach(0..<daysToShow, id: \.self) { dayIndex in
-                        let slot = slot(forDay: dayIndex, row: row)
-                        Rectangle()
-                            .fill(fillColor(for: slot))
-                            .frame(width: cellWidth, height: cellHeight)
-                            .overlay(
-                                Rectangle()
-                                    .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
-                            )
-                    }
-                }
-            }
-        }
+        .background(gridChromeBackground)
     }
 
     private func fillColor(for slot: Time) -> Color {
         if selectedTimes.contains(slot) {
-            return Color.accentColor.opacity(0.35)
+            return gridSelectedSlotFill
         }
         if let allowedSlots, !allowedSlots.contains(slot) {
-            return Color.secondary.opacity(0.06)
+            return gridDisabledSlotFill
         }
-        return Color.clear
+        return gridAvailableSlotFill
     }
 
     private func slot(forDay dayIndex: Int, row: Int) -> Time {
@@ -275,22 +352,6 @@ struct TimeGridSelectionView: View {
         let start = calendar.date(byAdding: .minute, value: minutesFromStart, to: dayStart) ?? dayStart
         let end = calendar.date(byAdding: .minute, value: minutesFromStart + slotMinutes, to: dayStart) ?? dayStart
         return Time(startTime: start, endTime: end, snapMinutes: slotMinutes, calendar: calendar)
-    }
-
-    private func slot(
-        at location: CGPoint,
-        timeLabelWidth: CGFloat,
-        headerHeight: CGFloat,
-        cellWidth: CGFloat,
-        cellHeight: CGFloat
-    ) -> Time? {
-        let x = location.x - timeLabelWidth
-        let y = location.y - headerHeight
-        guard x >= 0, y >= 0 else { return nil }
-        let dayIndex = Int(floor(x / cellWidth))
-        let row = Int(floor(y / cellHeight))
-        guard (0..<daysToShow).contains(dayIndex), (0..<slotsPerDay).contains(row) else { return nil }
-        return slot(forDay: dayIndex, row: row)
     }
 
     private func isTodayColumn(_ dayIndex: Int) -> Bool {
@@ -318,7 +379,8 @@ struct TimeGridSelectionView: View {
         let minutes = (startHour * 60) + (row * slotMinutes)
         let hour = minutes / 60
         let minute = minutes % 60
-        let date = Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+        let cal = Calendar.current
+        let date = cal.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
         return date.formatted(.dateTime.hour().minute())
     }
 }
