@@ -20,6 +20,18 @@ struct TimeGridSelectionView: View {
 
     private var slotsPerDay: Int { ((endHour - startHour) * 60) / slotMinutes }
 
+    /// When non-zero, `allowedSlots` changed — reclamp week navigation for event response.
+    private var allowedSlotsFingerprint: Int {
+        guard let slots = allowedSlots, !slots.isEmpty else { return 0 }
+        var hasher = Hasher()
+        hasher.combine(slots.count)
+        for t in slots.sorted(by: { $0.startTime < $1.startTime }) {
+            hasher.combine(t.startTime.timeIntervalSince1970)
+            hasher.combine(t.endTime.timeIntervalSince1970)
+        }
+        return hasher.finalize()
+    }
+
     private let weekNavHeight: CGFloat = 40
     private let headerHeight: CGFloat = 40
 
@@ -91,12 +103,48 @@ struct TimeGridSelectionView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
         )
+        .onAppear {
+            clampWeekOffsetToAllowedRangeIfNeeded()
+        }
+        .onChange(of: allowedSlotsFingerprint) { _, _ in
+            clampWeekOffsetToAllowedRangeIfNeeded()
+        }
+    }
+
+    /// Earliest / latest `weekOffset` (relative to “this calendar week”) that still contains a proposed slot. `nil` when not restricting navigation (creation flow).
+    private func allowedWeekOffsetBounds(calendar: Calendar = .current) -> ClosedRange<Int>? {
+        guard let slots = allowedSlots, !slots.isEmpty else { return nil }
+        let refStart = startOfWeek(containing: calendar.startOfDay(for: Date()), calendar: calendar)
+        var minWeekStart: Date?
+        var maxWeekStart: Date?
+        for t in slots {
+            let ws = startOfWeek(containing: t.startTime, calendar: calendar)
+            minWeekStart = minWeekStart.map { min($0, ws) } ?? ws
+            maxWeekStart = maxWeekStart.map { max($0, ws) } ?? ws
+        }
+        guard let loWeek = minWeekStart, let hiWeek = maxWeekStart else { return nil }
+        let lo = weeksOffset(fromReferenceWeekStart: refStart, toWeekStart: loWeek, calendar: calendar)
+        let hi = weeksOffset(fromReferenceWeekStart: refStart, toWeekStart: hiWeek, calendar: calendar)
+        return lo...hi
+    }
+
+    private func weeksOffset(fromReferenceWeekStart ref: Date, toWeekStart target: Date, calendar: Calendar) -> Int {
+        let days = calendar.dateComponents([.day], from: ref, to: target).day ?? 0
+        return days / 7
+    }
+
+    private func clampWeekOffsetToAllowedRangeIfNeeded() {
+        guard let bounds = allowedWeekOffsetBounds() else { return }
+        weekOffset = min(max(weekOffset, bounds.lowerBound), bounds.upperBound)
     }
 
     private var weekNavigationBar: some View {
         let calendar = Calendar.current
         let start = firstDayOfDisplayedWeek(calendar: calendar)
         let end = calendar.date(byAdding: .day, value: daysToShow - 1, to: start) ?? start
+        let bounds = allowedWeekOffsetBounds(calendar: calendar)
+        let prevDisabled = bounds.map { weekOffset <= $0.lowerBound } ?? false
+        let nextDisabled = bounds.map { weekOffset >= $0.upperBound } ?? false
 
         return HStack(spacing: 12) {
             Button {
@@ -108,7 +156,8 @@ struct TimeGridSelectionView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.primary)
+            .foregroundStyle(prevDisabled ? Color.secondary.opacity(0.35) : .primary)
+            .disabled(prevDisabled)
             .accessibilityLabel("Previous week")
 
             Spacer(minLength: 8)
@@ -130,7 +179,8 @@ struct TimeGridSelectionView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.primary)
+            .foregroundStyle(nextDisabled ? Color.secondary.opacity(0.35) : .primary)
+            .disabled(nextDisabled)
             .accessibilityLabel("Next week")
         }
         .padding(.horizontal, 8)
