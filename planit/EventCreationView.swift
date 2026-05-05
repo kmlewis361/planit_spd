@@ -70,7 +70,7 @@ struct EventCreationView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 4)
 
-                TimeGridSelectionView(selectedTimes: $proposedTimes, daysToShow: 7, startHour: 8, endHour: 20, slotMinutes: 30, height: 260)
+                TimeGridSelectionView(selectedTimes: $proposedTimes, daysToShow: 7, startHour: 8, endHour: 20, slotMinutes: 30, height: 304)
 
 //            var name: String
 //            var description: String

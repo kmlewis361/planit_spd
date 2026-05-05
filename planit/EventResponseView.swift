@@ -19,7 +19,6 @@ struct EventResponseView: View {
     @State private var isSubmitting: Bool = false
 
     var body: some View {
-        Text(eventId.uuidString)
         VStack{
             Text(event.name)
                 .font(.title)

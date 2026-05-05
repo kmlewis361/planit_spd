@@ -26,7 +26,6 @@ struct EventDetailsView: View {
         var id: String { time.id }
     }
     var body: some View {
-        Text(eventId.uuidString)
         VStack{
             Text(event.name)
                 .font(.title)

@@ -13,10 +13,15 @@ struct TimeGridSelectionView: View {
 
     @State private var dragMode: DragMode? = nil
     @State private var dragVisited: Set<Time> = []
+    /// 0 = the week that contains today; +1 = next week, −1 = previous.
+    @State private var weekOffset: Int = 0
 
     private enum DragMode { case selecting, deselecting }
 
     private var slotsPerDay: Int { ((endHour - startHour) * 60) / slotMinutes }
+
+    private let weekNavHeight: CGFloat = 40
+    private let headerHeight: CGFloat = 40
 
     init(
         selectedTimes: Binding<Set<Time>>,
@@ -37,44 +42,48 @@ struct TimeGridSelectionView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            let timeLabelWidth: CGFloat = 56
-            let headerHeight: CGFloat = 28
-            let cellWidth = max(1, (geo.size.width - timeLabelWidth) / CGFloat(daysToShow))
-            let cellHeight = max(18, (geo.size.height - headerHeight) / CGFloat(slotsPerDay))
+        VStack(spacing: 0) {
+            weekNavigationBar
+                .frame(height: weekNavHeight)
+            GeometryReader { geo in
+                let timeLabelWidth: CGFloat = 56
+                let cellWidth = max(1, (geo.size.width - timeLabelWidth) / CGFloat(daysToShow))
+                let slotRows = max(1, slotsPerDay)
+                let cellHeight = max(18, (geo.size.height - headerHeight) / CGFloat(slotRows))
 
-            VStack(spacing: 0) {
-                headerRow(cellWidth: cellWidth, timeLabelWidth: timeLabelWidth, height: headerHeight)
-                gridBody(cellWidth: cellWidth, cellHeight: cellHeight, timeLabelWidth: timeLabelWidth)
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard let slot = slot(at: value.location, timeLabelWidth: timeLabelWidth, headerHeight: headerHeight, cellWidth: cellWidth, cellHeight: cellHeight) else {
-                            return
+                VStack(spacing: 0) {
+                    headerRow(cellWidth: cellWidth, timeLabelWidth: timeLabelWidth, height: headerHeight)
+                    gridBody(cellWidth: cellWidth, cellHeight: cellHeight, timeLabelWidth: timeLabelWidth)
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard let slot = slot(at: value.location, timeLabelWidth: timeLabelWidth, headerHeight: headerHeight, cellWidth: cellWidth, cellHeight: cellHeight) else {
+                                return
+                            }
+                            if let allowedSlots, !allowedSlots.contains(slot) { return }
+                            if dragMode == nil {
+                                dragMode = selectedTimes.contains(slot) ? .deselecting : .selecting
+                                dragVisited.removeAll()
+                            }
+                            if dragVisited.contains(slot) { return }
+                            dragVisited.insert(slot)
+                            switch dragMode {
+                            case .selecting:
+                                selectedTimes.insert(slot)
+                            case .deselecting:
+                                selectedTimes.remove(slot)
+                            case .none:
+                                break
+                            }
                         }
-                        if let allowedSlots, !allowedSlots.contains(slot) { return }
-                        if dragMode == nil {
-                            dragMode = selectedTimes.contains(slot) ? .deselecting : .selecting
+                        .onEnded { _ in
+                            dragMode = nil
                             dragVisited.removeAll()
                         }
-                        if dragVisited.contains(slot) { return }
-                        dragVisited.insert(slot)
-                        switch dragMode {
-                        case .selecting:
-                            selectedTimes.insert(slot)
-                        case .deselecting:
-                            selectedTimes.remove(slot)
-                        case .none:
-                            break
-                        }
-                    }
-                    .onEnded { _ in
-                        dragMode = nil
-                        dragVisited.removeAll()
-                    }
-            )
+                )
+            }
         }
         .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -84,15 +93,91 @@ struct TimeGridSelectionView: View {
         )
     }
 
+    private var weekNavigationBar: some View {
+        let calendar = Calendar.current
+        let start = firstDayOfDisplayedWeek(calendar: calendar)
+        let end = calendar.date(byAdding: .day, value: daysToShow - 1, to: start) ?? start
+
+        return HStack(spacing: 12) {
+            Button {
+                weekOffset -= 1
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.semibold))
+                    .frame(minWidth: 44, minHeight: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .accessibilityLabel("Previous week")
+
+            Spacer(minLength: 8)
+
+            Text(weekRangeTitle(start: start, end: end, calendar: calendar))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.85)
+
+            Spacer(minLength: 8)
+
+            Button {
+                weekOffset += 1
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.body.weight(.semibold))
+                    .frame(minWidth: 44, minHeight: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .accessibilityLabel("Next week")
+        }
+        .padding(.horizontal, 8)
+        .background(Color.secondary.opacity(0.06))
+    }
+
+    private func weekRangeTitle(start: Date, end: Date, calendar: Calendar) -> String {
+        let m1 = start.formatted(.dateTime.month(.abbreviated).day())
+        let y1 = start.formatted(.dateTime.year())
+        let m2 = end.formatted(.dateTime.month(.abbreviated).day())
+        let y2 = end.formatted(.dateTime.year())
+        if y1 == y2 {
+            return "\(m1) – \(m2), \(y1)"
+        }
+        return "\(m1), \(y1) – \(m2), \(y2)"
+    }
+
+    /// First column = start of the **calendar week** (respects locale `firstWeekday`) + `weekOffset` full weeks.
+    private func firstDayOfDisplayedWeek(calendar: Calendar) -> Date {
+        let today = calendar.startOfDay(for: Date())
+        let weekStart = startOfWeek(containing: today, calendar: calendar)
+        return calendar.date(byAdding: .day, value: weekOffset * 7, to: weekStart) ?? weekStart
+    }
+
+    private func startOfWeek(containing date: Date, calendar: Calendar) -> Date {
+        let dayStart = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: dayStart)
+        let first = calendar.firstWeekday
+        let daysFromStart = (weekday - first + 7) % 7
+        return calendar.date(byAdding: .day, value: -daysFromStart, to: dayStart) ?? dayStart
+    }
+
     private func headerRow(cellWidth: CGFloat, timeLabelWidth: CGFloat, height: CGFloat) -> some View {
         HStack(spacing: 0) {
             Text("")
                 .frame(width: timeLabelWidth, height: height)
             ForEach(0..<daysToShow, id: \.self) { dayIndex in
-                Text(dayLabel(for: dayIndex))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: cellWidth, height: height)
+                let todayColumn = isTodayColumn(dayIndex)
+                VStack(spacing: 2) {
+                    Text(dayName(for: dayIndex))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(todayColumn ? Color.accentColor : .primary)
+                    Text(calendarDateLine(for: dayIndex))
+                        .font(.caption2)
+                        .foregroundStyle(todayColumn ? Color.accentColor.opacity(0.9) : .secondary)
+                }
+                .frame(width: cellWidth, height: height)
             }
         }
         .background(Color.secondary.opacity(0.06))
@@ -134,8 +219,8 @@ struct TimeGridSelectionView: View {
 
     private func slot(forDay dayIndex: Int, row: Int) -> Time {
         let calendar = Calendar.current
-        let startOfToday = calendar.startOfDay(for: Date())
-        let dayStart = calendar.date(byAdding: .day, value: dayIndex, to: startOfToday) ?? startOfToday
+        let weekFirst = firstDayOfDisplayedWeek(calendar: calendar)
+        let dayStart = calendar.date(byAdding: .day, value: dayIndex, to: weekFirst) ?? weekFirst
         let minutesFromStart = (startHour * 60) + (row * slotMinutes)
         let start = calendar.date(byAdding: .minute, value: minutesFromStart, to: dayStart) ?? dayStart
         let end = calendar.date(byAdding: .minute, value: minutesFromStart + slotMinutes, to: dayStart) ?? dayStart
@@ -158,10 +243,25 @@ struct TimeGridSelectionView: View {
         return slot(forDay: dayIndex, row: row)
     }
 
-    private func dayLabel(for dayIndex: Int) -> String {
+    private func isTodayColumn(_ dayIndex: Int) -> Bool {
         let calendar = Calendar.current
-        let date = calendar.date(byAdding: .day, value: dayIndex, to: Date()) ?? Date()
+        let weekFirst = firstDayOfDisplayedWeek(calendar: calendar)
+        guard let date = calendar.date(byAdding: .day, value: dayIndex, to: weekFirst) else { return false }
+        return calendar.isDateInToday(date)
+    }
+
+    private func dayName(for dayIndex: Int) -> String {
+        let calendar = Calendar.current
+        let weekFirst = firstDayOfDisplayedWeek(calendar: calendar)
+        let date = calendar.date(byAdding: .day, value: dayIndex, to: weekFirst) ?? weekFirst
         return date.formatted(.dateTime.weekday(.abbreviated))
+    }
+
+    private func calendarDateLine(for dayIndex: Int) -> String {
+        let calendar = Calendar.current
+        let weekFirst = firstDayOfDisplayedWeek(calendar: calendar)
+        let date = calendar.date(byAdding: .day, value: dayIndex, to: weekFirst) ?? weekFirst
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 
     private func timeLabel(forRow row: Int) -> String {
@@ -172,4 +272,3 @@ struct TimeGridSelectionView: View {
         return date.formatted(.dateTime.hour().minute())
     }
 }
-
