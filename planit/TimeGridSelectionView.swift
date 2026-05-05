@@ -3,6 +3,8 @@ import UIKit
 
 struct TimeGridSelectionView: View {
     @Binding var selectedTimes: Set<Time>
+    /// Set `true` while drag-to-paint is active so a wrapping SwiftUI `ScrollView` can use `.scrollDisabled($0)` (otherwise the sheet scrolls with the finger).
+    @Binding var locksAncestorVerticalScroll: Bool
     /// If set, only these slots are selectable (others are shown disabled).
     private let allowedSlots: Set<Time>?
 
@@ -66,6 +68,7 @@ struct TimeGridSelectionView: View {
 
     init(
         selectedTimes: Binding<Set<Time>>,
+        locksAncestorVerticalScroll: Binding<Bool> = .constant(false),
         allowedSlots: Set<Time>? = nil,
         daysToShow: Int = 7,
         startHour: Int = 0,
@@ -75,6 +78,7 @@ struct TimeGridSelectionView: View {
         height: CGFloat = 320
     ) {
         self._selectedTimes = selectedTimes
+        self._locksAncestorVerticalScroll = locksAncestorVerticalScroll
         self.allowedSlots = allowedSlots
         self.daysToShow = daysToShow
         self.startHour = startHour
@@ -118,6 +122,9 @@ struct TimeGridSelectionView: View {
                         handlePaintEnd: {
                             dragMode = nil
                             dragVisited.removeAll()
+                        },
+                        handlePaintSessionActive: { active in
+                            locksAncestorVerticalScroll = active
                         }
                     ) {
                         ZStack(alignment: .topLeading) {
@@ -153,6 +160,9 @@ struct TimeGridSelectionView: View {
         }
         .onChange(of: allowedSlotsFingerprint) { _, _ in
             clampWeekOffsetToAllowedRangeIfNeeded()
+        }
+        .onDisappear {
+            locksAncestorVerticalScroll = false
         }
     }
 
@@ -418,10 +428,12 @@ private final class TimeGridScrollCoordinator: NSObject, UIGestureRecognizerDele
     var onTap: ((CGPoint) -> Void)?
     var onPaint: ((CGPoint) -> Void)?
     var onPaintEnd: (() -> Void)?
+    var onPaintSessionActive: ((Bool) -> Void)?
 
     var lastScrollPulse: Int = -1
 
-    private var paintingLocksScroll = false
+    /// Long-press paint reached `.began` — inner `UIScrollView` and ancestor scroll should be locked.
+    private var paintSessionActive = false
 
     init(rowHeight: CGFloat) {
         self.rowHeight = rowHeight
@@ -441,15 +453,19 @@ private final class TimeGridScrollCoordinator: NSObject, UIGestureRecognizerDele
         let p = g.location(in: v)
         switch g.state {
         case .began:
-            paintingLocksScroll = true
+            paintSessionActive = true
             sv.isScrollEnabled = false
+            sv.panGestureRecognizer.isEnabled = false
+            onPaintSessionActive?(true)
             onPaint?(p)
         case .changed:
             onPaint?(p)
         case .ended, .cancelled, .failed:
-            if paintingLocksScroll {
-                paintingLocksScroll = false
+            if paintSessionActive {
+                paintSessionActive = false
                 sv.isScrollEnabled = true
+                sv.panGestureRecognizer.isEnabled = true
+                onPaintSessionActive?(false)
             }
             onPaintEnd?()
         default:
@@ -482,6 +498,7 @@ private struct TimeGridScrollContainer<Content: View>: UIViewRepresentable {
     let handleTap: (CGPoint) -> Void
     let handlePaint: (CGPoint) -> Void
     let handlePaintEnd: () -> Void
+    let handlePaintSessionActive: (Bool) -> Void
 
     @ViewBuilder var content: () -> Content
 
@@ -520,7 +537,7 @@ private struct TimeGridScrollContainer<Content: View>: UIViewRepresentable {
         sv.addGestureRecognizer(tap)
 
         let longPress = UILongPressGestureRecognizer(target: coordinator, action: #selector(TimeGridScrollCoordinator.handleLongPress(_:)))
-        longPress.minimumPressDuration = 0.36
+        longPress.minimumPressDuration = 0.16
         longPress.allowableMovement = 14
         longPress.delegate = coordinator
         sv.addGestureRecognizer(longPress)
@@ -528,6 +545,7 @@ private struct TimeGridScrollContainer<Content: View>: UIViewRepresentable {
         coordinator.onTap = handleTap
         coordinator.onPaint = handlePaint
         coordinator.onPaintEnd = handlePaintEnd
+        coordinator.onPaintSessionActive = handlePaintSessionActive
 
         return sv
     }
@@ -538,6 +556,7 @@ private struct TimeGridScrollContainer<Content: View>: UIViewRepresentable {
         coordinator.onTap = handleTap
         coordinator.onPaint = handlePaint
         coordinator.onPaintEnd = handlePaintEnd
+        coordinator.onPaintSessionActive = handlePaintSessionActive
 
         if coordinator.lastScrollPulse != scrollPulse {
             coordinator.lastScrollPulse = scrollPulse

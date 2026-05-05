@@ -12,13 +12,14 @@ struct EventCreationView: View {
    
     /// Called on the main actor after save (or if iCloud is unavailable). Passes the event so the home list can merge it even if CloudKit query lags.
     var onSend: ((Event) -> Void)? = nil
-    @State private var event = Event(name: "", description: "blank descprition", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var event = Event(name: "", description: "", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var inviteesString: String = ""
     @State private var inviteSuggestions: [String] = []
     @State private var inviteSearchTask: Task<Void, Never>?
     @State private var inviteAutocompleteSearching = false
     @State private var inviteAutocompleteShowNoMatches = false
     @State private var proposedTimes: Set<Time> = []
+    @State private var lockOuterScrollForTimeGridPaint = false
     #if DEBUG
     @State private var debugPlanItSeedStatus: String?
     #endif
@@ -70,7 +71,13 @@ struct EventCreationView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 4)
 
-                TimeGridSelectionView(selectedTimes: $proposedTimes, daysToShow: 7, slotMinutes: 30, height: 320)
+                TimeGridSelectionView(
+                    selectedTimes: $proposedTimes,
+                    locksAncestorVerticalScroll: $lockOuterScrollForTimeGridPaint,
+                    daysToShow: 7,
+                    slotMinutes: 30,
+                    height: 320
+                )
 
 //            var name: String
 //            var description: String
@@ -135,6 +142,7 @@ struct EventCreationView: View {
             .padding()
         }
         .scrollDismissesKeyboard(.interactively)
+        .scrollDisabled(lockOuterScrollForTimeGridPaint)
     }
 
     private var inviteesAutocompleteSection: some View {

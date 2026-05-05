@@ -8,6 +8,7 @@ struct HomeView: View {
     var pendingHomeListEvent: Binding<Event?> = .constant(nil)
 
     @State var localEvents: [Event] = events
+    @State private var signedInUsernameLabel: String = ""
     var onRespond: ((UUID) -> Void)? = nil
     var onSeeDetails: ((UUID) -> Void)? = nil
     var onLoggedOut: (()-> Void)? = nil
@@ -15,16 +16,28 @@ struct HomeView: View {
 //    var username: String = ""
     
     var body: some View {
-        VStack {
-            Button("Create EVent", systemImage: "plus") {
-                print("plus clicked")
-                onCreateEvent?()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                if !signedInUsernameLabel.isEmpty {
+                    Text("@\(planItHandleForDisplay(signedInUsernameLabel))")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.accent)
+                        .lineLimit(1)
+                        // Nudge down slightly so cap height lines up with the plus glyph’s optical center.
+                        .offset(y: 2)
+                }
+                Spacer(minLength: 0)
+                Button("Create EVent", systemImage: "plus") {
+                    print("plus clicked")
+                    onCreateEvent?()
+                }
+                .font(.title)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Create event")
             }
-            .font(.title)
-            .labelStyle(.iconOnly)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding()
+            .padding(.top)
+            .padding(.bottom, 8)
             ForEach(localEvents) { event in
                 VStack {
                     if(!event.name.isEmpty){
@@ -49,11 +62,25 @@ struct HomeView: View {
             }
             Spacer()
         }
-        .padding()
-        .onAppear { print(events) }
+        .padding(.horizontal)
+        .padding(.bottom)
+        .onAppear {
+            refreshSignedInUsernameLabel()
+            print(events)
+        }
         .task(id: homeEventsRefreshTrigger) {
+            refreshSignedInUsernameLabel()
             await refreshLocalEventsFromCloudKit()
         }
+    }
+
+    private func refreshSignedInUsernameLabel() {
+        signedInUsernameLabel = normalizedPlanItUsername(globalUsername)
+    }
+
+    /// Avoid `@alice` → `@@alice` if stored handle ever includes a leading `@`.
+    private func planItHandleForDisplay(_ normalized: String) -> String {
+        normalized.hasPrefix("@") ? String(normalized.dropFirst()) : normalized
     }
 
     @MainActor
