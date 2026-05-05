@@ -12,7 +12,7 @@ struct EventCreationView: View {
    
     /// Called on the main actor after save (or if iCloud is unavailable). Passes the event so the home list can merge it even if CloudKit query lags.
     var onSend: ((Event) -> Void)? = nil
-    @State private var event = Event(name: "", description: "", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var event = Event(name: "", description: "", invitees: [], duration: 3600, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var inviteesString: String = ""
     @State private var inviteSuggestions: [String] = []
     @State private var inviteSearchTask: Task<Void, Never>?
@@ -43,6 +43,20 @@ struct EventCreationView: View {
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                Stepper(
+                    value: Binding(
+                        get: { Int(max(30, event.duration / 60)) },
+                        set: { event.duration = TimeInterval($0 * 60) }
+                    ),
+                    in: 30...480,
+                    step: 15
+                ) {
+                    Text("Event duration: \(Int(event.duration / 60)) minutes")
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text("Who's invited?")
                     .font(.headline)
@@ -79,13 +93,6 @@ struct EventCreationView: View {
                     height: 320
                 )
 
-//            var name: String
-//            var description: String
-//            var invitees: [String]
-//            var duration: TimeInterval
-//            var bestTime: Time
-//            var bestLocation: String
-//            var responses: [Response]
                 Button("Send it!") {
                     // Saves the event to CloudKit (public database).
                     events.append(event)
@@ -110,6 +117,7 @@ struct EventCreationView: View {
                         "id": event.id.uuidString,
                         "name": event.name,
                         "description": event.description,
+                        "duration": event.duration as CKRecordValue,
                         "proposedTimesData": proposedTimesData as Any,
                         "invitees": inviteesForCloudKit as NSArray,
                     ])

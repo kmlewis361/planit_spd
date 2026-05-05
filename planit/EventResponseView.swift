@@ -11,7 +11,7 @@ import CloudKit
 struct EventResponseView: View {
     var eventId: UUID = UUID()
     var onSubmit: ((Response) -> Void)? = nil
-    @State private var event: Event = Event(name: "Loading…", description: "", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var event: Event = Event(name: "Loading…", description: "", invitees: [], duration: 3600, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
 
     @State private var selectedTimes: Set<Time> = []
     @State private var isLoadingEvent: Bool = true

@@ -72,6 +72,80 @@ func topTimeSlots(from responses: [Response], limit: Int = 3) -> [(time: Time, v
         .map { (time: $0.key, votes: $0.value) }
 }
 
+private func proposedSlotsAreAdjacent(_ a: Time, _ b: Time) -> Bool {
+    abs(a.endTime.timeIntervalSince(b.startTime)) < 2
+}
+
+/// Ranks contiguous runs of **proposed** slots whose span is at least `meetingDuration`.
+/// A respondent counts toward a window only if they selected **every** atomic slot in that window.
+func topAvailabilityWindows(
+    proposedTimes: [Time],
+    responses: [Response],
+    meetingDuration: TimeInterval,
+    limit: Int = 3
+) -> [(time: Time, votes: Int)] {
+    if proposedTimes.isEmpty {
+        let slots = topTimeSlots(from: responses, limit: max(limit * 4, 12))
+        if meetingDuration <= 0 {
+            return Array(slots.prefix(limit))
+        }
+        return slots
+            .filter { $0.time.endTime.timeIntervalSince($0.time.startTime) + 0.5 >= meetingDuration }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    if meetingDuration <= 0 {
+        return Array(topTimeSlots(from: responses, limit: limit))
+    }
+
+    let sorted = proposedTimes.sorted { $0.startTime < $1.startTime }
+    var chains: [[Time]] = []
+    var current: [Time] = []
+    for slot in sorted {
+        if let last = current.last, proposedSlotsAreAdjacent(last, slot) {
+            current.append(slot)
+        } else {
+            if !current.isEmpty { chains.append(current) }
+            current = [slot]
+        }
+    }
+    if !current.isEmpty { chains.append(current) }
+
+    var bestByWindowId: [String: (window: Time, votes: Int)] = [:]
+    for chain in chains {
+        let n = chain.count
+        for i in 0..<n {
+            for j in i..<n {
+                let span = chain[j].endTime.timeIntervalSince(chain[i].startTime)
+                guard span + 0.5 >= meetingDuration else { continue }
+                let window = Time(startTime: chain[i].startTime, endTime: chain[j].endTime, snapMinutes: 30)
+                let atoms = Array(chain[i...j])
+                let votes = responses.filter { resp in
+                    let chosen = Set(resp.times)
+                    return atoms.allSatisfy { chosen.contains($0) }
+                }.count
+                let wid = window.id
+                if let existing = bestByWindowId[wid] {
+                    if votes > existing.votes {
+                        bestByWindowId[wid] = (window, votes)
+                    }
+                } else {
+                    bestByWindowId[wid] = (window, votes)
+                }
+            }
+        }
+    }
+
+    return bestByWindowId.values
+        .sorted { lhs, rhs in
+            if lhs.votes != rhs.votes { return lhs.votes > rhs.votes }
+            return lhs.window.startTime < rhs.window.startTime
+        }
+        .prefix(max(0, limit))
+        .map { (time: $0.window, votes: $0.votes) }
+}
+
 func fetchEventFromId(idString: String) async throws -> Event? {
     let database = CKContainer.default().publicCloudDatabase
     let predicate = NSPredicate(format: "id == %@", idString)
@@ -126,6 +200,12 @@ private func stringList(from record: CKRecord, key: String) -> [String] {
     return []
 }
 
+private func eventDuration(from record: CKRecord) -> TimeInterval {
+    if let d = record["duration"] as? Double { return d }
+    if let n = record["duration"] as? NSNumber { return n.doubleValue }
+    return 3600
+}
+
 func event(from record: CKRecord) -> Event {
     let idString = record["id"] as? String
     let id = idString.flatMap { UUID(uuidString: $0) } ?? UUID()
@@ -139,7 +219,7 @@ func event(from record: CKRecord) -> Event {
         name: name,
         description: description,
         invitees: invitees,
-        duration: 0,
+        duration: eventDuration(from: record),
         proposedTimes: proposedTimes,
         bestTime: Time(startTime: Date(), endTime: Date()),
         responses: []

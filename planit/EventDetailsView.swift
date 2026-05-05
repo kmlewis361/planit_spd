@@ -12,12 +12,17 @@ struct EventDetailsView: View {
     var username: String = ""
     var pendingResponse: Response? = nil
 
-    @State private var event: Event = Event(name: "Loading…", description: "", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var event: Event = Event(name: "Loading…", description: "", invitees: [], duration: 3600, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var topTimes: [RankedTime] = []
     @State private var isLoadingTopTimes: Bool = true
     @State private var topTimesRefreshToken: Int = 0
     @State private var errorMessage: String?
-    private var topTimesTaskKey: String { "\(eventId.uuidString)-\(pendingResponse?.id.uuidString ?? "none")-\(topTimesRefreshToken)" }
+    @State private var lastResponsesNonEmpty: Bool = false
+
+    /// Recompute ranking when event metadata loads or responses refresh.
+    private var rankingTaskIdentity: String {
+        "\(eventId.uuidString)-\(event.proposedTimes.count)-\(Int(event.duration))-\(topTimesRefreshToken)-\(pendingResponse?.id.uuidString ?? "none")"
+    }
 
     private struct RankedTime: Identifiable {
         let time: Time
@@ -45,6 +50,14 @@ struct EventDetailsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
                 .padding(.bottom)
+
+            Text("Event length: \(formatEventDuration(event.duration))")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.bottom, 4)
+
             Text("Who's invited?")
                 .font(.headline)
                 .foregroundStyle(.accent)
@@ -60,7 +73,7 @@ struct EventDetailsView: View {
                     .padding(.horizontal)
             }
 
-            Text("Best times:")
+            Text("Best times (everyone free for the full length):")
                 .font(.headline)
                 .foregroundStyle(.accent)
                 .multilineTextAlignment(.leading)
@@ -81,7 +94,7 @@ struct EventDetailsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .padding(.horizontal)
             } else if topTimes.isEmpty {
-                Text("No responses yet.")
+                Text(bestTimesEmptyExplanation)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
@@ -115,7 +128,7 @@ struct EventDetailsView: View {
         .task {
             await refreshLocalEventFromCloudKit()
         }
-        .task(id: topTimesTaskKey) {
+        .task(id: rankingTaskIdentity) {
             await refreshTopTimesFromCloudKit(prioritizing: pendingResponse)
         }
         .onReceive(NotificationCenter.default.publisher(for: .planitEventResponsesDidChange)) { notification in
@@ -124,6 +137,29 @@ struct EventDetailsView: View {
             topTimesRefreshToken += 1
         }
         .padding()
+    }
+
+    private var bestTimesEmptyExplanation: String {
+        if !lastResponsesNonEmpty {
+            return "No responses yet."
+        }
+        return "No stretches of proposed slots are at least \(formatEventDuration(event.duration)) long where everyone who responded is free for every slot in that stretch."
+    }
+
+    private func formatEventDuration(_ interval: TimeInterval) -> String {
+        let minutes = Int((interval / 60).rounded())
+        if minutes <= 0 {
+            return "0 minutes"
+        }
+        if minutes < 60 {
+            return "\(minutes) minutes"
+        }
+        let hours = minutes / 60
+        let rem = minutes % 60
+        if rem == 0 {
+            return hours == 1 ? "1 hour" : "\(hours) hours"
+        }
+        return "\(hours) hr \(rem) min"
     }
     @MainActor
     private func refreshLocalEventFromCloudKit() async {
@@ -142,12 +178,20 @@ struct EventDetailsView: View {
         defer { isLoadingTopTimes = false }
         do {
             var responses = try await fetchResponsesForEvent(eventIdString: eventId.uuidString)
+            lastResponsesNonEmpty = !responses.isEmpty
             if let pending, !pending.username.isEmpty {
                 // If CloudKit hasn't surfaced the new response yet, count it locally so the user sees their vote immediately.
-                responses.removeAll(where: { $0.username == pending.username })
+                let pk = normalizedPlanItUsername(pending.username).lowercased()
+                responses.removeAll(where: { normalizedPlanItUsername($0.username).lowercased() == pk })
                 responses.append(pending)
+                lastResponsesNonEmpty = true
             }
-            let ranked = topTimeSlots(from: responses, limit: 3)
+            let ranked = topAvailabilityWindows(
+                proposedTimes: event.proposedTimes,
+                responses: responses,
+                meetingDuration: event.duration,
+                limit: 3
+            )
             topTimes = ranked.map { RankedTime(time: $0.time, votes: $0.votes) }
             errorMessage = nil
         } catch {

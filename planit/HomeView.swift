@@ -1,6 +1,6 @@
 import SwiftUI
 import CloudKit
-var events: [Event] = [Event(name: "", description: "", invitees: [], duration: 1000, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
+var events: [Event] = [Event(name: "", description: "", invitees: [], duration: 3600, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])]
 struct HomeView: View {
     /// When this value changes (after returning to the navigation root), CloudKit is queried again.
     var homeEventsRefreshTrigger: Int = 0
