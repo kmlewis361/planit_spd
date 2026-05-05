@@ -7,26 +7,49 @@
 import CloudKit
 import Foundation
 
+private func responseFromRecord(_ record: CKRecord) -> Response {
+    let username = (record["username"] as? String) ?? ""
+    let timesData = record["timesData"] as? Data
+    let times = timesData.flatMap { try? JSONDecoder().decode([Time].self, from: $0) } ?? []
+    return Response(username: username, times: times)
+}
+
 func fetchResponsesForEvent(eventIdString: String) async throws -> [Response] {
+    let pairs = try await fetchResponseRecordsForEvent(eventIdString: eventIdString)
+    return dedupedResponsesPreferringLatestRecord(pairs)
+}
+
+/// One logical response per PlanIt username (latest CloudKit modification wins).
+private func dedupedResponsesPreferringLatestRecord(_ pairs: [(record: CKRecord, response: Response)]) -> [Response] {
+    var best: [String: (mod: Date, response: Response)] = [:]
+    for pair in pairs {
+        let key = normalizedPlanItUsername(pair.response.username).lowercased()
+        guard !key.isEmpty else { continue }
+        let mod = pair.record.modificationDate ?? Date.distantPast
+        if let cur = best[key], cur.mod >= mod { continue }
+        best[key] = (mod, pair.response)
+    }
+    return best.values.map(\.response)
+}
+
+/// CloudKit `Response` rows for an event, paired with `CKRecord` for upserts.
+func fetchResponseRecordsForEvent(eventIdString: String) async throws -> [(record: CKRecord, response: Response)] {
     let database = CKContainer.default().publicCloudDatabase
     let predicate = NSPredicate(format: "eventId == %@", eventIdString)
     let query = CKQuery(recordType: "Response", predicate: predicate)
     do {
         let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil)
-        var responses: [Response] = []
-        responses.reserveCapacity(matchResults.count)
+        var pairs: [(CKRecord, Response)] = []
+        pairs.reserveCapacity(matchResults.count)
         for (_, result) in matchResults {
             switch result {
             case .success(let record):
-                let username = (record["username"] as? String) ?? ""
-                let timesData = record["timesData"] as? Data
-                let times = timesData.flatMap { try? JSONDecoder().decode([Time].self, from: $0) } ?? []
-                responses.append(Response(username: username, times: times))
+                pairs.append((record, responseFromRecord(record)))
             case .failure(let error):
                 throw error
             }
         }
-        return responses
+        return pairs
     } catch {
         throw error
     }

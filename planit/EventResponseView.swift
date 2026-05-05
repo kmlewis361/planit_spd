@@ -17,6 +17,8 @@ struct EventResponseView: View {
     @State private var isLoadingEvent: Bool = true
     @State private var isSubmitting: Bool = false
     @State private var errorMessage: String?
+    /// CloudKit row for this user’s response when reopening the respond screen (nil → insert).
+    @State private var existingResponseRecord: CKRecord?
 
     var body: some View {
         VStack{
@@ -111,9 +113,34 @@ struct EventResponseView: View {
             if let fetched = try await fetchEventFromId(idString: eventId.uuidString) {
                 event = fetched
                 errorMessage = nil
-                // If the allowed set changes (e.g. after loading), drop any selections that aren't allowed.
                 let allowed = Set(fetched.proposedTimes)
-                selectedTimes = selectedTimes.filter { allowed.contains($0) }
+
+                let meKey = normalizedPlanItUsername(globalUsername).lowercased()
+                if !meKey.isEmpty {
+                    do {
+                        let pairs = try await fetchResponseRecordsForEvent(eventIdString: eventId.uuidString)
+                        let mine = pairs.filter {
+                            normalizedPlanItUsername($0.response.username).lowercased() == meKey
+                        }
+                        if let best = mine.max(by: { lhs, rhs in
+                            let l = lhs.record.modificationDate ?? Date.distantPast
+                            let r = rhs.record.modificationDate ?? Date.distantPast
+                            return l < r
+                        }) {
+                            existingResponseRecord = best.record
+                            selectedTimes = Set(best.response.times.filter { allowed.contains($0) })
+                        } else {
+                            existingResponseRecord = nil
+                            selectedTimes = []
+                        }
+                    } catch {
+                        existingResponseRecord = nil
+                        selectedTimes = []
+                    }
+                } else {
+                    existingResponseRecord = nil
+                    selectedTimes = selectedTimes.filter { allowed.contains($0) }
+                }
             } else {
                 errorMessage = "This event couldn’t be found."
             }
@@ -136,18 +163,21 @@ struct EventResponseView: View {
         defer { isSubmitting = false }
 
         let database = CKContainer.default().publicCloudDatabase
-        let record = CKRecord(recordType: "Response")
+        let record: CKRecord
+        if let existing = existingResponseRecord {
+            record = existing
+        } else {
+            record = CKRecord(recordType: "Response")
+            record["eventId"] = eventId.uuidString as CKRecordValue
+            record["username"] = normalizedPlanItUsername(username).lowercased() as CKRecordValue
+        }
 
-        let timesData = try? JSONEncoder().encode(times)
-
-        record.setValuesForKeys([
-            "eventId": eventId.uuidString,
-            "username": username,
-            "timesData": timesData as Any
-        ])
+        let timesData = (try? JSONEncoder().encode(times)) ?? Data()
+        record["timesData"] = timesData as CKRecordValue
 
         do {
-            _ = try await database.save(record)
+            let saved = try await database.save(record)
+            existingResponseRecord = saved
             errorMessage = nil
             NotificationCenter.default.post(
                 name: .planitEventResponsesDidChange,
