@@ -55,7 +55,7 @@ func fetchResponseRecordsForEvent(eventIdString: String) async throws -> [(recor
     }
 }
 
-func topTimeSlots(from responses: [Response], limit: Int = 3) -> [(time: Time, votes: Int)] {
+func topTimeSlots(from responses: [Response], limit: Int? = 3) -> [(time: Time, votes: Int)] {
     var counts: [Time: Int] = [:]
     for response in responses {
         // Count each slot once per user (in case of duplicates).
@@ -63,13 +63,14 @@ func topTimeSlots(from responses: [Response], limit: Int = 3) -> [(time: Time, v
             counts[slot, default: 0] += 1
         }
     }
-    return counts
+    let sorted = counts
         .sorted { lhs, rhs in
             if lhs.value != rhs.value { return lhs.value > rhs.value }
             return lhs.key.startTime < rhs.key.startTime
         }
-        .prefix(max(0, limit))
         .map { (time: $0.key, votes: $0.value) }
+    guard let limit else { return sorted }
+    return Array(sorted.prefix(max(0, limit)))
 }
 
 private func proposedSlotsAreAdjacent(_ a: Time, _ b: Time) -> Bool {
@@ -78,25 +79,27 @@ private func proposedSlotsAreAdjacent(_ a: Time, _ b: Time) -> Bool {
 
 /// Ranks contiguous runs of **proposed** slots whose span is at least `meetingDuration`.
 /// A respondent counts toward a window only if they selected **every** atomic slot in that window.
+/// Pass `limit: nil` to rank every qualifying window (for tiered UI selection).
 func topAvailabilityWindows(
     proposedTimes: [Time],
     responses: [Response],
     meetingDuration: TimeInterval,
-    limit: Int = 3
+    limit: Int? = 3
 ) -> [(time: Time, votes: Int)] {
     if proposedTimes.isEmpty {
-        let slots = topTimeSlots(from: responses, limit: max(limit * 4, 12))
+        let poolCap = limit.map { max($0 * 4, 12) }
+        let slots = topTimeSlots(from: responses, limit: poolCap)
         if meetingDuration <= 0 {
+            guard let limit else { return slots }
             return Array(slots.prefix(limit))
         }
-        return slots
-            .filter { $0.time.endTime.timeIntervalSince($0.time.startTime) + 0.5 >= meetingDuration }
-            .prefix(limit)
-            .map { $0 }
+        let filtered = slots.filter { $0.time.endTime.timeIntervalSince($0.time.startTime) + 0.5 >= meetingDuration }
+        guard let limit else { return filtered }
+        return Array(filtered.prefix(limit))
     }
 
     if meetingDuration <= 0 {
-        return Array(topTimeSlots(from: responses, limit: limit))
+        return topTimeSlots(from: responses, limit: limit)
     }
 
     let sorted = proposedTimes.sorted { $0.startTime < $1.startTime }
@@ -137,13 +140,70 @@ func topAvailabilityWindows(
         }
     }
 
-    return bestByWindowId.values
+    let ranked = bestByWindowId.values
         .sorted { lhs, rhs in
             if lhs.votes != rhs.votes { return lhs.votes > rhs.votes }
             return lhs.window.startTime < rhs.window.startTime
         }
-        .prefix(max(0, limit))
         .map { (time: $0.window, votes: $0.votes) }
+    guard let limit else { return ranked }
+    return Array(ranked.prefix(max(0, limit)))
+}
+
+/// All slots tied for the highest vote count; if fewer than `minimumCount`, adds every slot tied for second-highest, then third-highest. Ignores zero-vote slots so empty consensus does not flood the list.
+func tieredBestTimes(from ranked: [(time: Time, votes: Int)], minimumCount: Int = 3) -> [(time: Time, votes: Int)] {
+    guard !ranked.isEmpty else { return [] }
+    let sorted = ranked.sorted { lhs, rhs in
+        if lhs.votes != rhs.votes { return lhs.votes > rhs.votes }
+        return lhs.time.startTime < rhs.time.startTime
+    }
+    let distinctDescending = Array(Set(sorted.map(\.votes))).filter { $0 > 0 }.sorted(by: >)
+    guard !distinctDescending.isEmpty else { return [] }
+
+    var result: [(time: Time, votes: Int)] = []
+    for i in 0 ..< min(3, distinctDescending.count) {
+        let band = distinctDescending[i]
+        result.append(contentsOf: sorted.filter { $0.votes == band })
+        if result.count >= minimumCount { break }
+    }
+    let collapsed = dropStrictlyContainedIntervals(dedupeIdenticalIntervals(result))
+    return collapsed.sorted { lhs, rhs in
+        if lhs.votes != rhs.votes { return lhs.votes > rhs.votes }
+        return lhs.time.startTime < rhs.time.startTime
+    }
+}
+
+/// Keeps the strongest vote count when the same interval appears more than once.
+private func dedupeIdenticalIntervals(_ items: [(time: Time, votes: Int)]) -> [(time: Time, votes: Int)] {
+    var best: [String: (time: Time, votes: Int)] = [:]
+    for item in items {
+        let key = item.time.id
+        if let existing = best[key] {
+            if item.votes > existing.votes {
+                best[key] = item
+            }
+        } else {
+            best[key] = item
+        }
+    }
+    return Array(best.values)
+}
+
+/// Drops intervals that are strictly contained in another interval with the **same** vote count (redundant shorter window).
+private func dropStrictlyContainedIntervals(_ items: [(time: Time, votes: Int)]) -> [(time: Time, votes: Int)] {
+    guard items.count > 1 else { return items }
+    return items.filter { cand in
+        !items.contains { other in
+            guard cand.time.id != other.time.id else { return false }
+            guard other.votes == cand.votes else { return false }
+            let os = other.time.startTime
+            let oe = other.time.endTime
+            let cs = cand.time.startTime
+            let ce = cand.time.endTime
+            guard os <= cs, ce <= oe else { return false }
+            return !(cs == os && ce == oe)
+        }
+    }
 }
 
 func fetchEventFromId(idString: String) async throws -> Event? {

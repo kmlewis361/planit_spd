@@ -190,9 +190,9 @@ struct EventDetailsView: View {
                 proposedTimes: event.proposedTimes,
                 responses: responses,
                 meetingDuration: event.duration,
-                limit: 3
+                limit: nil
             )
-            topTimes = ranked.map { RankedTime(time: $0.time, votes: $0.votes) }
+            topTimes = tieredBestTimes(from: ranked, minimumCount: 3).map { RankedTime(time: $0.time, votes: $0.votes) }
             errorMessage = nil
         } catch {
             topTimes = []
