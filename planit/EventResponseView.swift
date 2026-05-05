@@ -10,13 +10,13 @@ import CloudKit
 
 struct EventResponseView: View {
     var eventId: UUID = UUID()
-    //TODO fetch this from a table based off the UUID
     var onSubmit: ((Response) -> Void)? = nil
-    @State private var event: Event = Event(name: "Blank Event", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var event: Event = Event(name: "Loading…", description: "", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
 
     @State private var selectedTimes: Set<Time> = []
     @State private var isLoadingEvent: Bool = true
     @State private var isSubmitting: Bool = false
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack{
@@ -67,6 +67,17 @@ struct EventResponseView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
             }
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+            }
 
             TimeGridSelectionView(
                 selectedTimes: $selectedTimes,
@@ -96,11 +107,18 @@ struct EventResponseView: View {
     private func loadEventFromCloudKit() async {
         isLoadingEvent = true
         defer { isLoadingEvent = false }
-        if let fetched = await fetchEventFromId(idString: eventId.uuidString) {
-            event = fetched
-            // If the allowed set changes (e.g. after loading), drop any selections that aren't allowed.
-            let allowed = Set(fetched.proposedTimes)
-            selectedTimes = selectedTimes.filter { allowed.contains($0) }
+        do {
+            if let fetched = try await fetchEventFromId(idString: eventId.uuidString) {
+                event = fetched
+                errorMessage = nil
+                // If the allowed set changes (e.g. after loading), drop any selections that aren't allowed.
+                let allowed = Set(fetched.proposedTimes)
+                selectedTimes = selectedTimes.filter { allowed.contains($0) }
+            } else {
+                errorMessage = "This event couldn’t be found."
+            }
+        } catch {
+            errorMessage = "Couldn’t load this event. Please check your connection and iCloud, then try again."
         }
     }
 
@@ -130,13 +148,13 @@ struct EventResponseView: View {
 
         do {
             _ = try await database.save(record)
-            print("Saved Response for eventId=\(eventId.uuidString)")
+            errorMessage = nil
             NotificationCenter.default.post(
                 name: .planitEventResponsesDidChange,
                 object: eventId.uuidString
             )
         } catch {
-            print("Error saving Response: \(error.localizedDescription)")
+            errorMessage = "Couldn’t submit your response. Please try again."
         }
 
         onSubmit?(localResponse)

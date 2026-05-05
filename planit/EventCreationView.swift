@@ -87,7 +87,7 @@ struct EventCreationView: View {
 //            var bestLocation: String
 //            var responses: [Response]
                 Button("Send it!") {
-                    //TODO add functionality for actually sending the event to the backend and stuff
+                    // Saves the event to CloudKit (public database).
                     events.append(event)
                     let container = CKContainer.default()
                     let database = container.publicCloudDatabase
@@ -117,7 +117,6 @@ struct EventCreationView: View {
                     CKContainer.default().accountStatus { accountStatus, error in
                         if accountStatus == .noAccount {
                             Task { @MainActor in
-                                print("NOT AUTHENTICATED")
                                 onSend?(createdEvent)
                             }
                             return
@@ -125,9 +124,7 @@ struct EventCreationView: View {
                         database.save(record) { _, error in
                             Task { @MainActor in
                                 if let error {
-                                    print("Error saving record: \(error.localizedDescription)")
                                 } else {
-                                    print("SAVED RECORD!")
                                 }
                                 onSend?(createdEvent)
                             }
@@ -334,7 +331,6 @@ struct EventCreationView: View {
         } catch {
             inviteSuggestions = []
             inviteAutocompleteShowNoMatches = false
-            print("Invite autocomplete: \(error.localizedDescription)")
         }
     }
 

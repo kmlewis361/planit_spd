@@ -28,8 +28,7 @@ struct WelcomeView: View {
              
             
             Button(action: {
-                // Use the provided closure to let the parent decide navigation
-                print("User chose maybe later (WelcomeView)")
+                // Use the provided closure to let the parent decide navigation.
                 onMaybeLater?()
             }) {
                 Text("Maybe later...")

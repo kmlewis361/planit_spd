@@ -9,6 +9,7 @@ struct HomeView: View {
 
     @State var localEvents: [Event] = events
     @State private var signedInUsernameLabel: String = ""
+    @State private var loadErrorMessage: String?
     var onRespond: ((UUID) -> Void)? = nil
     var onSeeDetails: ((UUID) -> Void)? = nil
     var onLoggedOut: (()-> Void)? = nil
@@ -28,7 +29,6 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 0)
                 Button("Create EVent", systemImage: "plus") {
-                    print("plus clicked")
                     onCreateEvent?()
                 }
                 .font(.title)
@@ -38,6 +38,24 @@ struct HomeView: View {
             }
             .padding(.top)
             .padding(.bottom, 8)
+
+            if let loadErrorMessage {
+                HStack(spacing: 10) {
+                    Text(loadErrorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 0)
+                    Button("Dismiss") { self.loadErrorMessage = nil }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.plain)
+                }
+                .padding(10)
+                .background(Color.secondary.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.bottom, 6)
+            }
+
             ForEach(localEvents) { event in
                 VStack {
                     if(!event.name.isEmpty){
@@ -66,7 +84,6 @@ struct HomeView: View {
         .padding(.bottom)
         .onAppear {
             refreshSignedInUsernameLabel()
-            print(events)
         }
         .task(id: homeEventsRefreshTrigger) {
             refreshSignedInUsernameLabel()
@@ -91,32 +108,28 @@ struct HomeView: View {
             return
         }
         let me = normalizedPlanItUsername(globalUsername).lowercased()
-        var fetched = await fetchEventsFromCloudKit(whereInviteeUsernameLowercased: me)
+        let fetched: [Event]
+        do {
+            fetched = try await fetchEventsFromCloudKit(whereInviteeUsernameLowercased: me)
+            loadErrorMessage = nil
+        } catch {
+            loadErrorMessage = "Couldn’t load your events right now. Please check your connection and iCloud, then try again."
+            localEvents = []
+            return
+        }
         let pending = pendingHomeListEvent.wrappedValue
         if let pending, !fetched.contains(where: { $0.id == pending.id }), eventIncludesInviteeLowercased(pending, usernameLowercased: me) {
-            fetched.insert(pending, at: 0)
+            var merged = fetched
+            merged.insert(pending, at: 0)
+            localEvents = merged
+            if pending != nil { pendingHomeListEvent.wrappedValue = nil }
+            return
         }
         if pending != nil {
             pendingHomeListEvent.wrappedValue = nil
         }
         localEvents = fetched
     }
-
-//    private func event(from record: CKRecord) -> Event {
-//        let idString = record["id"] as? String
-//        let id = idString.flatMap { UUID(uuidString: $0) } ?? UUID()
-//        let name = (record["name"] as? String) ?? ""
-//        let description = (record["description"] as? String) ?? ""
-//        return Event(
-//            id: id,
-//            name: name,
-//            description: description,
-//            invitees: [],
-//            duration: 0,
-//            bestTime: Time(startTime: Date(), endTime: Date()),
-//            responses: []
-//        )
-//    }
 }
 
 #Preview {

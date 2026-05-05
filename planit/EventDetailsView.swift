@@ -8,16 +8,15 @@
 import SwiftUI
 
 struct EventDetailsView: View {
-//    var event: Event = Event(name: "Blank Event", duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     var eventId: UUID = UUID()
     var username: String = ""
     var pendingResponse: Response? = nil
-    //TODO fetch this from a table based off the UUID
-    
-    @State private var event: Event = Event(name: "Blank Event", description: "blank descprition", invitees: ["Hannah", "Caroline"], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+
+    @State private var event: Event = Event(name: "Loading…", description: "", invitees: [], duration: 1, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var topTimes: [RankedTime] = []
     @State private var isLoadingTopTimes: Bool = true
     @State private var topTimesRefreshToken: Int = 0
+    @State private var errorMessage: String?
     private var topTimesTaskKey: String { "\(eventId.uuidString)-\(pendingResponse?.id.uuidString ?? "none")-\(topTimesRefreshToken)" }
 
     private struct RankedTime: Identifiable {
@@ -72,6 +71,15 @@ struct EventDetailsView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal)
             } else if topTimes.isEmpty {
                 Text("No responses yet.")
                     .font(.body)
@@ -119,8 +127,12 @@ struct EventDetailsView: View {
     }
     @MainActor
     private func refreshLocalEventFromCloudKit() async {
-        if let fetched = await fetchEventFromId(idString: eventId.uuidString) {
-            event = fetched
+        do {
+            if let fetched = try await fetchEventFromId(idString: eventId.uuidString) {
+                event = fetched
+            }
+        } catch {
+            // Keep showing whatever we already have; the responses section will surface the error state.
         }
     }
 
@@ -128,14 +140,20 @@ struct EventDetailsView: View {
     private func refreshTopTimesFromCloudKit(prioritizing pending: Response?) async {
         isLoadingTopTimes = true
         defer { isLoadingTopTimes = false }
-        var responses = await fetchResponsesForEvent(eventIdString: eventId.uuidString)
-        if let pending, !pending.username.isEmpty {
-            // If CloudKit hasn't surfaced the new response yet, count it locally so the user sees their vote immediately.
-            responses.removeAll(where: { $0.username == pending.username })
-            responses.append(pending)
+        do {
+            var responses = try await fetchResponsesForEvent(eventIdString: eventId.uuidString)
+            if let pending, !pending.username.isEmpty {
+                // If CloudKit hasn't surfaced the new response yet, count it locally so the user sees their vote immediately.
+                responses.removeAll(where: { $0.username == pending.username })
+                responses.append(pending)
+            }
+            let ranked = topTimeSlots(from: responses, limit: 3)
+            topTimes = ranked.map { RankedTime(time: $0.time, votes: $0.votes) }
+            errorMessage = nil
+        } catch {
+            topTimes = []
+            errorMessage = "Couldn’t load responses right now. Please check your connection and iCloud, then try again."
         }
-        let ranked = topTimeSlots(from: responses, limit: 3)
-        topTimes = ranked.map { RankedTime(time: $0.time, votes: $0.votes) }
     }
 
     private func formatTimeRange(_ time: Time) -> String {

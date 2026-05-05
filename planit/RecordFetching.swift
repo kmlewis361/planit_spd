@@ -7,7 +7,7 @@
 import CloudKit
 import Foundation
 
-func fetchResponsesForEvent(eventIdString: String) async -> [Response] {
+func fetchResponsesForEvent(eventIdString: String) async throws -> [Response] {
     let database = CKContainer.default().publicCloudDatabase
     let predicate = NSPredicate(format: "eventId == %@", eventIdString)
     let query = CKQuery(recordType: "Response", predicate: predicate)
@@ -23,13 +23,12 @@ func fetchResponsesForEvent(eventIdString: String) async -> [Response] {
                 let times = timesData.flatMap { try? JSONDecoder().decode([Time].self, from: $0) } ?? []
                 responses.append(Response(username: username, times: times))
             case .failure(let error):
-                print("CloudKit response record error: \(error.localizedDescription)")
+                throw error
             }
         }
         return responses
     } catch {
-        print("CloudKit response query failed: \(error.localizedDescription)")
-        return []
+        throw error
     }
 }
 
@@ -50,7 +49,7 @@ func topTimeSlots(from responses: [Response], limit: Int = 3) -> [(time: Time, v
         .map { (time: $0.key, votes: $0.value) }
 }
 
-func fetchEventFromId(idString: String) async -> Event? {
+func fetchEventFromId(idString: String) async throws -> Event? {
     let database = CKContainer.default().publicCloudDatabase
     let predicate = NSPredicate(format: "id == %@", idString)
     let query = CKQuery(recordType: "Event", predicate: predicate)
@@ -59,21 +58,19 @@ func fetchEventFromId(idString: String) async -> Event? {
         for (_, result) in matchResults {
             switch result {
             case .success(let record):
-                print("CloudKit Event id: \(record.recordID.recordName)")
                 return event(from: record)
             case .failure(let error):
-                print("CloudKit record error: \(error.localizedDescription)")
+                throw error
             }
         }
         return nil
     } catch {
-        print("CloudKit query failed: \(error.localizedDescription)")
-        return nil
+        throw error
     }
 }
 
 /// Loads events where the signed-in PlanIt user appears in `invitees` (CloudKit **List** of **Strings**, lowercased; **Queryable** with `ANY invitees ==`).
-func fetchEventsFromCloudKit(whereInviteeUsernameLowercased usernameLowercased: String) async -> [Event] {
+func fetchEventsFromCloudKit(whereInviteeUsernameLowercased usernameLowercased: String) async throws -> [Event] {
     guard !usernameLowercased.isEmpty else { return [] }
     let database = CKContainer.default().publicCloudDatabase
     let predicate = NSPredicate(format: "ANY invitees == %@", usernameLowercased)
@@ -85,16 +82,14 @@ func fetchEventsFromCloudKit(whereInviteeUsernameLowercased usernameLowercased: 
         for (_, result) in matchResults {
             switch result {
             case .success(let record):
-                print("CloudKit Event id: \(record.recordID.recordName)")
                 events.append(event(from: record))
             case .failure(let error):
-                print("CloudKit record error: \(error.localizedDescription)")
+                throw error
             }
         }
         return events
     } catch {
-        print("CloudKit events-for-invitee query failed: \(error.localizedDescription)")
-        return []
+        throw error
     }
 }
 

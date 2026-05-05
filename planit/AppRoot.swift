@@ -43,7 +43,6 @@ struct AppRoot: View {
                 },
                 onCreateEvent: {
                     path.append(Route.eventCreation)
-                    print("AppRoot: navigating to event creation")
                 }
             )
             .navigationDestination(for: Route.self) { route in
@@ -77,7 +76,6 @@ struct AppRoot: View {
                         },
                         onCreateEvent: {
                             path.append(Route.eventCreation)
-                            print("AppRoot: navigating to event creation")
                         }
                     )
                 case .eventDetails(let eventId):
