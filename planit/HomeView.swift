@@ -122,7 +122,7 @@ struct HomeView: View {
             var merged = fetched
             merged.insert(pending, at: 0)
             localEvents = merged
-            if pending != nil { pendingHomeListEvent.wrappedValue = nil }
+            pendingHomeListEvent.wrappedValue = nil
             return
         }
         if pending != nil {

@@ -122,18 +122,15 @@ struct EventCreationView: View {
                         "invitees": inviteesForCloudKit as NSArray,
                     ])
 
-                    CKContainer.default().accountStatus { accountStatus, error in
+                    CKContainer.default().accountStatus { accountStatus, _ in
                         if accountStatus == .noAccount {
                             Task { @MainActor in
                                 onSend?(createdEvent)
                             }
                             return
                         }
-                        database.save(record) { _, error in
+                        database.save(record) { _, _ in
                             Task { @MainActor in
-                                if let error {
-                                } else {
-                                }
                                 onSend?(createdEvent)
                             }
                         }
