@@ -40,7 +40,7 @@ struct EventDetailsView: View {
 
                 if isOrganizer {
                     HStack {
-                        Spacer(minLength: 0)
+//                        Spacer(minLength: 0)
                         NavigationLink {
                             EventCreationView(
                                 editingEventId: eventId,
@@ -53,7 +53,7 @@ struct EventDetailsView: View {
                         } label: {
                             Text("Edit event")
                         }
-                        .buttonStyle(PlanItSecondaryButtonStyle())
+                        .buttonStyle(PlanItTextLinkButtonStyle(foregroundColor: Color.accentColor))
                         Spacer(minLength: 0)
                     }
                 }

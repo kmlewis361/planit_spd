@@ -50,11 +50,18 @@ struct PlanItSecondaryButtonStyle: ButtonStyle {
 }
 
 struct PlanItTextLinkButtonStyle: ButtonStyle {
+    var foregroundColor: Color = .primary
+
+    /// Accent green text link (e.g. primary actions).
+    static let accent = PlanItTextLinkButtonStyle(foregroundColor: Color.accentColor)
+    /// Default body-color text link.
+    static let primary = PlanItTextLinkButtonStyle(foregroundColor: .primary)
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline)
-            .foregroundStyle(.primary)
-            .underline(configuration.isPressed)
+            .foregroundStyle(foregroundColor.opacity(configuration.isPressed ? 0.65 : 1))
+            .underline(true)
     }
 }
 
