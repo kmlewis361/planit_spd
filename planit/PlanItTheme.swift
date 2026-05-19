@@ -9,6 +9,15 @@ enum PlanItTheme {
     static let fieldCornerRadius: CGFloat = 10
     static let cardCornerRadius: CGFloat = 12
     static let fieldBackground = Color("FieldBackground")
+
+    /// Invitee fully available for the entire best-time window.
+    static let availabilityFull = Color.accentColor
+    /// Invitee selected some but not all slots in the window.
+    static let availabilityPartial = Color.accentColor.opacity(0.55)
+    /// Invitee responded but is not free for the full window.
+    static let availabilityUnavailable = Color.red
+    /// Invitee has not submitted a response yet.
+    static let availabilityNoResponse = Color.secondary
 }
 
 // MARK: - Buttons

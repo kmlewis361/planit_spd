@@ -173,6 +173,100 @@ func tieredBestTimes(from ranked: [(time: Time, votes: Int)], minimumCount: Int 
     }
 }
 
+// MARK: - Per-invitee availability for a best-time window
+
+enum InviteeAvailabilityStatus: Equatable {
+    case notResponded
+    case fullyFree
+    case notFree
+    case partiallyFree(summary: String)
+}
+
+struct InviteeAvailabilityRow: Identifiable {
+    let invitee: String
+    let status: InviteeAvailabilityStatus
+    var id: String { invitee.lowercased() }
+}
+
+/// Proposed atomic slots that lie inside `window` (used to score each invitee).
+func atomicSlotsInAvailabilityWindow(_ window: Time, proposedTimes: [Time]) -> [Time] {
+    let epsilon: TimeInterval = 2
+    let inside = proposedTimes
+        .filter { slot in
+            slot.startTime >= window.startTime - epsilon && slot.endTime <= window.endTime + epsilon
+        }
+        .sorted { $0.startTime < $1.startTime }
+    if !inside.isEmpty { return inside }
+    return [window]
+}
+
+func responsesByNormalizedUsername(_ responses: [Response]) -> [String: Response] {
+    var map: [String: Response] = [:]
+    for response in responses {
+        let key = normalizedPlanItUsername(response.username).lowercased()
+        guard !key.isEmpty else { continue }
+        map[key] = response
+    }
+    return map
+}
+
+func inviteeAvailabilityRows(
+    window: Time,
+    invitees: [String],
+    proposedTimes: [Time],
+    responses: [Response]
+) -> [InviteeAvailabilityRow] {
+    let atoms = atomicSlotsInAvailabilityWindow(window, proposedTimes: proposedTimes)
+    let byUser = responsesByNormalizedUsername(responses)
+    return invitees.map { invitee in
+        let key = normalizedPlanItUsername(invitee).lowercased()
+        let status: InviteeAvailabilityStatus
+        if let response = byUser[key] {
+            status = availabilityStatus(for: response, atoms: atoms)
+        } else {
+            status = .notResponded
+        }
+        return InviteeAvailabilityRow(invitee: invitee, status: status)
+    }
+}
+
+private func availabilityStatus(for response: Response, atoms: [Time]) -> InviteeAvailabilityStatus {
+    let chosen = Set(response.times)
+    let selected = atoms.filter { chosen.contains($0) }
+    if selected.count == atoms.count {
+        return .fullyFree
+    }
+    if selected.isEmpty {
+        return .notFree
+    }
+    let runs = contiguousSlotRuns(selected.sorted { $0.startTime < $1.startTime })
+    let summary = "Free \(runs.map(formatCompactSlotRun).joined(separator: ", "))"
+    return .partiallyFree(summary: summary)
+}
+
+private func contiguousSlotRuns(_ sorted: [Time]) -> [[Time]] {
+    guard !sorted.isEmpty else { return [] }
+    var runs: [[Time]] = []
+    var current: [Time] = [sorted[0]]
+    for slot in sorted.dropFirst() {
+        if let last = current.last, proposedSlotsAreAdjacent(last, slot) {
+            current.append(slot)
+        } else {
+            runs.append(current)
+            current = [slot]
+        }
+    }
+    runs.append(current)
+    return runs
+}
+
+private func formatCompactSlotRun(_ run: [Time]) -> String {
+    guard let first = run.first, let last = run.last else { return "" }
+    let start = first.startTime.formatted(.dateTime.hour().minute())
+    let end = last.endTime.formatted(.dateTime.hour().minute())
+    return "\(start)–\(end)"
+}
+
 /// Keeps the strongest vote count when the same interval appears more than once.
 private func dedupeIdenticalIntervals(_ items: [(time: Time, votes: Int)]) -> [(time: Time, votes: Int)] {
     var best: [String: (time: Time, votes: Int)] = [:]

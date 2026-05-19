@@ -18,6 +18,7 @@ struct EventDetailsView: View {
     @State private var topTimesRefreshToken: Int = 0
     @State private var errorMessage: String?
     @State private var lastResponsesNonEmpty: Bool = false
+    @State private var eventResponses: [Response] = []
 
     /// Recompute ranking when event metadata loads or responses refresh.
     private var rankingTaskIdentity: String {
@@ -58,8 +59,12 @@ struct EventDetailsView: View {
                 }
                 .planItCard()
 
-                Text("Best times (everyone free for the full length)")
+                Text("Best times")
                     .planItSectionTitle()
+                Text("Gray: no response · Green: free for full window · Light green: partial · Red: not free")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Group {
                     if isLoadingTopTimes {
@@ -74,22 +79,22 @@ struct EventDetailsView: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 12) {
                             ForEach(topTimes) { ranked in
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(formatTimeRange(ranked.time))
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                    Spacer()
-                                    Text("\(ranked.votes)")
-                                        .font(.callout.weight(.semibold))
-                                        .foregroundStyle(Color.accentColor)
-                                }
+                                BestTimeWindowCard(
+                                    timeLabel: formatTimeRange(ranked.time),
+                                    fullyAvailableCount: ranked.votes,
+                                    inviteeRows: inviteeAvailabilityRows(
+                                        window: ranked.time,
+                                        invitees: event.invitees,
+                                        proposedTimes: event.proposedTimes,
+                                        responses: eventResponses
+                                    )
+                                )
                             }
                         }
                     }
                 }
-                .planItCard()
             }
             .padding()
         }
@@ -154,6 +159,7 @@ struct EventDetailsView: View {
                 responses.append(pending)
                 lastResponsesNonEmpty = true
             }
+            eventResponses = responses
             let ranked = topAvailabilityWindows(
                 proposedTimes: event.proposedTimes,
                 responses: responses,
@@ -164,6 +170,7 @@ struct EventDetailsView: View {
             errorMessage = nil
         } catch {
             topTimes = []
+            eventResponses = []
             errorMessage = "Couldn’t load responses right now. Please check your connection and iCloud, then try again."
         }
     }
