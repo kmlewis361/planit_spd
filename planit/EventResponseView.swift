@@ -70,11 +70,15 @@ struct EventResponseView: View {
                 .padding()
             }
 
-            Button("I'm done, show me the details!") {
-                Task { await submitResponseToCloudKitAndContinue() }
+            HStack {
+                Spacer(minLength: 0)
+                Button("I'm done, show me the details!") {
+                    Task { await submitResponseToCloudKitAndContinue() }
+                }
+                .buttonStyle(PlanItPrimaryButtonStyle())
+                .disabled(isSubmitting || isLoadingEvent)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(PlanItPrimaryButtonStyle())
-            .disabled(isSubmitting || isLoadingEvent)
             .padding()
         }
         .planItScreen()

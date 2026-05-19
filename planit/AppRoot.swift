@@ -16,6 +16,7 @@ enum Route: Hashable {
     case home
     case eventDetails(eventId: UUID)
     case eventCreation
+    case eventCreatedPrompt(eventId: UUID)
     case eventResponse(eventId: UUID)
 }
 
@@ -83,8 +84,20 @@ struct AppRoot: View {
                 case .eventCreation:
                     EventCreationView(onSend: { created in
                         pendingHomeListEvent = created
-                        path = NavigationPath()
+                        path.removeLast()
+                        path.append(Route.eventCreatedPrompt(eventId: created.id))
                     })
+                case .eventCreatedPrompt(let eventId):
+                    EventCreatedAvailabilityPromptView(
+                        eventName: pendingHomeListEvent?.name ?? "",
+                        onRespondNow: {
+                            path.removeLast()
+                            path.append(Route.eventResponse(eventId: eventId))
+                        },
+                        onMaybeLater: {
+                            path = NavigationPath()
+                        }
+                    )
                 case .eventResponse(let eventId):
                     EventResponseView(eventId: eventId, onSubmit: { response in
                         pendingResponseForDetails[eventId] = response

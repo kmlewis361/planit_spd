@@ -24,7 +24,6 @@ struct WelcomeView: View {
                 onDoIt?()
             }
             .buttonStyle(PlanItPrimaryButtonStyle())
-            .padding(.horizontal, 28)
 
             Button(action: { onMaybeLater?() }) {
                 Text("Maybe later...")

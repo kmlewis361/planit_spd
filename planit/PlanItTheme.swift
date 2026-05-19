@@ -9,6 +9,7 @@ enum PlanItTheme {
     static let fieldCornerRadius: CGFloat = 10
     static let cardCornerRadius: CGFloat = 12
     static let fieldBackground = Color("FieldBackground")
+    static let pillHorizontalPadding: CGFloat = 28
 
     /// Invitee fully available for the entire best-time window.
     static let availabilityFull = Color.accentColor
@@ -27,10 +28,11 @@ struct PlanItPrimaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.title3.weight(.semibold))
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, PlanItTheme.pillHorizontalPadding)
             .padding(.vertical, 14)
             .background(Color.accentColor.opacity(configuration.isPressed ? 0.82 : 1))
             .clipShape(Capsule())
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -39,10 +41,11 @@ struct PlanItSecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.body.weight(.medium))
             .foregroundStyle(Color.accentColor)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, PlanItTheme.pillHorizontalPadding)
             .padding(.vertical, 12)
             .background(PlanItTheme.fieldBackground)
             .clipShape(Capsule())
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
 

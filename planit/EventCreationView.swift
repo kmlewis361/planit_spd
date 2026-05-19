@@ -89,6 +89,8 @@ struct EventCreationView: View {
                 .background(PlanItTheme.fieldBackground)
                 .clipShape(RoundedRectangle(cornerRadius: PlanItTheme.cardCornerRadius, style: .continuous))
 
+                HStack {
+                    Spacer(minLength: 0)
                 Button("Send it!") {
                     // Saves the event to CloudKit (public database).
                     events.append(event)
@@ -133,6 +135,8 @@ struct EventCreationView: View {
                     }
                 }
                 .buttonStyle(PlanItPrimaryButtonStyle())
+                    Spacer(minLength: 0)
+                }
                 .padding(.top, 8)
 
                 Color.clear.frame(height: 24)

@@ -61,14 +61,12 @@ struct LoginView: View {
                             Task { await bootstrap() }
                         }
                         .buttonStyle(PlanItPrimaryButtonStyle())
-                        .padding(.horizontal, 8)
 
                         if showsOpenSettings(for: reason) {
                             Button("Open Settings") {
                                 openSystemSettings()
                             }
                             .buttonStyle(PlanItSecondaryButtonStyle())
-                            .padding(.horizontal, 8)
                         }
 
                         Link("Apple Support — iCloud", destination: URL(string: "https://support.apple.com/icloud")!)
@@ -96,7 +94,6 @@ struct LoginView: View {
                         Task { await bootstrap() }
                     }
                     .buttonStyle(PlanItPrimaryButtonStyle())
-                    .padding(.horizontal, 8)
 
                     Link("Apple — Designing a CloudKit database", destination: URL(string: "https://developer.apple.com/documentation/cloudkit/designing-and-creating-a-cloudkit-database")!)
                         .font(.footnote)
@@ -131,7 +128,6 @@ struct LoginView: View {
                         Task { await saveNewUsername() }
                     }
                     .buttonStyle(PlanItPrimaryButtonStyle())
-                    .padding(.horizontal, 24)
                     .disabled(chosenUsername.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
 
                 case .returning(let username):
@@ -144,7 +140,6 @@ struct LoginView: View {
                         onLogin?(false)
                     }
                     .buttonStyle(PlanItPrimaryButtonStyle())
-                    .padding(.horizontal, 24)
                     .padding(.top, 8)
 
                 case .saving:
