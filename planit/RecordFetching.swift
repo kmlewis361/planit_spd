@@ -353,8 +353,28 @@ func fetchEventFromId(idString: String) async throws -> Event? {
     return event(from: record)
 }
 
+/// Usernames (lowercased) added on this edit save; drives update push via `newlyInvited` on the Event record.
+func newlyInvitedUsernamesLowercased(
+    previousInviteesLowercased: Set<String>,
+    currentInvitees: [String],
+    excludingOrganizerLowercased organizerLowercased: String
+) -> [String] {
+    let current = Set(
+        currentInvitees
+            .map { normalizedPlanItUsername($0).lowercased() }
+            .filter { !$0.isEmpty }
+    )
+    return current
+        .subtracting(previousInviteesLowercased)
+        .filter { $0 != organizerLowercased }
+        .sorted()
+}
+
 /// Updates an existing CloudKit `Event` record (same `id`; preserves `finalTimeData` on the record).
-func updateEventInCloudKit(_ event: Event) async throws {
+func updateEventInCloudKit(
+    _ event: Event,
+    newlyInvitedUsernamesLowercased newlyInvited: [String] = []
+) async throws {
     guard let record = try await fetchEventRecordFromId(idString: event.id.uuidString) else {
         throw NSError(domain: "PlanIt", code: 2, userInfo: [NSLocalizedDescriptionKey: "Event not found"])
     }
@@ -368,6 +388,7 @@ func updateEventInCloudKit(_ event: Event) async throws {
     record["duration"] = event.duration as CKRecordValue
     record["proposedTimesData"] = proposedTimesData as CKRecordValue
     record["invitees"] = inviteesForCloudKit as NSArray
+    record["newlyInvited"] = newlyInvited as NSArray
     let database = CKContainer.default().publicCloudDatabase
     _ = try await database.save(record)
 }

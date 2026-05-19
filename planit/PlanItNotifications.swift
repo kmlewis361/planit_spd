@@ -14,7 +14,8 @@ extension Notification.Name {
 }
 
 enum PlanItNotifications {
-    private static let inviteSubscriptionPrefix = "event-invite-"
+    private static let inviteCreateSubscriptionPrefix = "event-invite-create-"
+    private static let inviteUpdateSubscriptionPrefix = "event-invite-update-"
 
     private static var planItDatabase: CKDatabase {
         CKContainer.default().publicCloudDatabase
@@ -30,9 +31,9 @@ enum PlanItNotifications {
         Task {
             await requestAuthorizationAndRegisterForRemoteNotifications()
             do {
-                try await ensureEventInviteSubscription(usernameLowercased: username)
+                try await ensureEventInviteSubscriptions(usernameLowercased: username)
                 #if DEBUG
-                print("PlanIt: invite push subscription active for @\(username)")
+                print("PlanIt: invite push subscriptions active for @\(username)")
                 #endif
             } catch {
                 #if DEBUG
@@ -54,22 +55,36 @@ enum PlanItNotifications {
         UIApplication.shared.registerForRemoteNotifications()
     }
 
-    private static func ensureEventInviteSubscription(usernameLowercased: String) async throws {
-        let subscriptionID = "\(inviteSubscriptionPrefix)\(usernameLowercased)"
-        let predicate = NSPredicate(format: "ANY invitees == %@", usernameLowercased)
-        let subscription = CKQuerySubscription(
+    private static func ensureEventInviteSubscriptions(usernameLowercased: String) async throws {
+        let alertBody = "You've been invited to a new PlanIt event. Tap to share your availability."
+
+        let createSubscription = CKQuerySubscription(
             recordType: "Event",
-            predicate: predicate,
-            subscriptionID: subscriptionID,
+            predicate: NSPredicate(format: "ANY invitees == %@", usernameLowercased),
+            subscriptionID: "\(inviteCreateSubscriptionPrefix)\(usernameLowercased)",
             options: [.firesOnRecordCreation]
         )
+        createSubscription.notificationInfo = notificationInfo(alertBody: alertBody)
+        _ = try await planItDatabase.save(createSubscription)
+
+        // Fires when an organizer adds this user via `newlyInvited` on event edit (see updateEventInCloudKit).
+        let updateSubscription = CKQuerySubscription(
+            recordType: "Event",
+            predicate: NSPredicate(format: "ANY newlyInvited == %@", usernameLowercased),
+            subscriptionID: "\(inviteUpdateSubscriptionPrefix)\(usernameLowercased)",
+            options: [.firesOnRecordUpdate]
+        )
+        updateSubscription.notificationInfo = notificationInfo(alertBody: alertBody)
+        _ = try await planItDatabase.save(updateSubscription)
+    }
+
+    private static func notificationInfo(alertBody: String) -> CKSubscription.NotificationInfo {
         let info = CKSubscription.NotificationInfo()
-        info.alertBody = "You've been invited to a new PlanIt event. Tap to share your availability."
+        info.alertBody = alertBody
         info.soundName = "default"
         info.shouldBadge = true
         info.desiredKeys = ["id", "name"]
-        subscription.notificationInfo = info
-        _ = try await planItDatabase.save(subscription)
+        return info
     }
 
     // MARK: - Navigation

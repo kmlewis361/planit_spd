@@ -22,6 +22,8 @@ struct EventCreationView: View {
     @State private var event = Event(name: "", description: "", invitees: [], duration: 0, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
     @State private var preservedFinalTime: Time?
     @State private var didHydrateForm = false
+    /// Lowercased invitees when edit form loaded; used to detect newly added invitees on save.
+    @State private var inviteesAtEditStart: Set<String> = []
     /// Nil until the organizer sets duration with the stepper (avoids a pre-filled default).
     @State private var durationMinutes: Int?
     @State private var inviteesString: String = ""
@@ -290,6 +292,11 @@ struct EventCreationView: View {
         } else {
             inviteesString = source.invitees.joined(separator: ", ")
         }
+        inviteesAtEditStart = Set(
+            source.invitees
+                .map { normalizedPlanItUsername($0).lowercased() }
+                .filter { !$0.isEmpty }
+        )
     }
 
     private func submitEventToCloudKit() {
@@ -311,9 +318,16 @@ struct EventCreationView: View {
         )
 
         if isEditing {
+            syncInviteesFromString()
+            let orgLower = normalizedPlanItUsername(organizerPlanItUsername).lowercased()
+            let newlyInvited = newlyInvitedUsernamesLowercased(
+                previousInviteesLowercased: inviteesAtEditStart,
+                currentInvitees: savedEvent.invitees,
+                excludingOrganizerLowercased: orgLower
+            )
             Task { @MainActor in
                 do {
-                    try await updateEventInCloudKit(savedEvent)
+                    try await updateEventInCloudKit(savedEvent, newlyInvitedUsernamesLowercased: newlyInvited)
                     validationPrompt = nil
                     NotificationCenter.default.post(
                         name: .planitEventDidChange,
