@@ -38,6 +38,26 @@ struct EventDetailsView: View {
                     .foregroundStyle(Color.accentColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
+                if isOrganizer {
+                    HStack {
+                        Spacer(minLength: 0)
+                        NavigationLink {
+                            EventCreationView(
+                                editingEventId: eventId,
+                                initialEvent: event,
+                                onSend: { updated in
+                                    event = updated
+                                    topTimesRefreshToken += 1
+                                }
+                            )
+                        } label: {
+                            Text("Edit event")
+                        }
+                        .buttonStyle(PlanItSecondaryButtonStyle())
+                        Spacer(minLength: 0)
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Event description")
                         .planItSectionTitle()
@@ -144,6 +164,12 @@ struct EventDetailsView: View {
             guard let changedEventId = notification.object as? String else { return }
             guard changedEventId == eventId.uuidString else { return }
             Task { await refreshLocalEventFromCloudKit() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .planitEventDidChange)) { notification in
+            guard let changedEventId = notification.object as? String else { return }
+            guard changedEventId == eventId.uuidString else { return }
+            Task { await refreshLocalEventFromCloudKit() }
+            topTimesRefreshToken += 1
         }
     }
 

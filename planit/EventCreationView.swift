@@ -9,10 +9,19 @@ import SwiftUI
 import CloudKit
 
 struct EventCreationView: View {
-   
+    /// When set, the form edits an existing event and updates CloudKit instead of creating a new record.
+    var editingEventId: UUID? = nil
+    /// Optional snapshot to pre-fill before CloudKit returns (e.g. from event details).
+    var initialEvent: Event? = nil
+
     /// Called on the main actor after save (or if iCloud is unavailable). Passes the event so the home list can merge it even if CloudKit query lags.
     var onSend: ((Event) -> Void)? = nil
+
+    @Environment(\.dismiss) private var dismiss
+
     @State private var event = Event(name: "", description: "", invitees: [], duration: 0, bestTime: Time(startTime: Date(), endTime: Date()), responses: [])
+    @State private var preservedFinalTime: Time?
+    @State private var didHydrateForm = false
     /// Nil until the organizer sets duration with the stepper (avoids a pre-filled default).
     @State private var durationMinutes: Int?
     @State private var inviteesString: String = ""
@@ -60,9 +69,18 @@ struct EventCreationView: View {
         areProposedTimesMissing || isProposedSpanTooShortForDuration
     }
 
+    private var isEditing: Bool { editingEventId != nil }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
+                if isEditing {
+                    Text("Edit event")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 TextField("Event name", text: $event.name)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
@@ -161,7 +179,7 @@ struct EventCreationView: View {
 
                 HStack {
                     Spacer(minLength: 0)
-                    Button("Send it!") {
+                    Button(isEditing ? "Save changes" : "Send it!") {
                         attemptSend()
                     }
                     .buttonStyle(PlanItPrimaryButtonStyle())
@@ -180,6 +198,9 @@ struct EventCreationView: View {
         .onChange(of: inviteesString) { _, _ in clearValidationHighlightsIfResolved() }
         .onChange(of: proposedTimes) { _, _ in clearValidationHighlightsIfResolved() }
         .onChange(of: durationMinutes) { _, _ in clearValidationHighlightsIfResolved() }
+        .task(id: editingEventId) {
+            await hydrateFormIfNeeded()
+        }
     }
 
     private var durationMinutesLabel: String {
@@ -239,18 +260,45 @@ struct EventCreationView: View {
         }
     }
 
+    @MainActor
+    private func hydrateFormIfNeeded() async {
+        guard isEditing, !didHydrateForm else { return }
+        if let initialEvent, initialEvent.id == editingEventId {
+            hydrateForm(from: initialEvent)
+            didHydrateForm = true
+            return
+        }
+        if let editingEventId,
+           let fetched = try? await fetchEventFromId(idString: editingEventId.uuidString) {
+            hydrateForm(from: fetched)
+            didHydrateForm = true
+        }
+    }
+
+    private func hydrateForm(from source: Event) {
+        event = source
+        preservedFinalTime = source.finalTime
+        if source.duration > 0 {
+            durationMinutes = Int((source.duration / 60).rounded())
+        }
+        proposedTimes = Set(source.proposedTimes)
+        let org = organizerPlanItUsername
+        if !org.isEmpty,
+           let first = source.invitees.first,
+           first.caseInsensitiveCompare(org) == .orderedSame {
+            inviteesString = source.invitees.dropFirst().joined(separator: ", ")
+        } else {
+            inviteesString = source.invitees.joined(separator: ", ")
+        }
+    }
+
     private func submitEventToCloudKit() {
         event.name = trimmedEventName
         if let durationMinutes {
             event.duration = TimeInterval(durationMinutes * 60)
         }
-        events.append(event)
-        let container = CKContainer.default()
-        let database = container.publicCloudDatabase
-        let record = CKRecord(recordType: "Event")
-        let proposedTimesData = encodeProposedTimesForCloudKit(proposedTimes)
         let sortedProposed = proposedTimes.sorted { $0.startTime < $1.startTime }
-        let createdEvent = Event(
+        let savedEvent = Event(
             id: event.id,
             name: event.name,
             description: event.description,
@@ -258,9 +306,34 @@ struct EventCreationView: View {
             duration: event.duration,
             proposedTimes: sortedProposed,
             bestTime: event.bestTime,
+            finalTime: isEditing ? preservedFinalTime : nil,
             responses: event.responses
         )
-        let inviteesForCloudKit = createdEvent.invitees
+
+        if isEditing {
+            Task { @MainActor in
+                do {
+                    try await updateEventInCloudKit(savedEvent)
+                    validationPrompt = nil
+                    NotificationCenter.default.post(
+                        name: .planitEventDidChange,
+                        object: savedEvent.id.uuidString
+                    )
+                    onSend?(savedEvent)
+                    dismiss()
+                } catch {
+                    validationPrompt = "Couldn’t save your changes. Please check your connection and iCloud, then try again."
+                }
+            }
+            return
+        }
+
+        events.append(event)
+        let container = CKContainer.default()
+        let database = container.publicCloudDatabase
+        let record = CKRecord(recordType: "Event")
+        let proposedTimesData = encodeProposedTimesForCloudKit(proposedTimes)
+        let inviteesForCloudKit = savedEvent.invitees
             .map { normalizedPlanItUsername($0).lowercased() }
             .filter { !$0.isEmpty }
         record.setValuesForKeys([
@@ -275,13 +348,13 @@ struct EventCreationView: View {
         CKContainer.default().accountStatus { accountStatus, _ in
             if accountStatus == .noAccount {
                 Task { @MainActor in
-                    onSend?(createdEvent)
+                    onSend?(savedEvent)
                 }
                 return
             }
             database.save(record) { _, _ in
                 Task { @MainActor in
-                    onSend?(createdEvent)
+                    onSend?(savedEvent)
                 }
             }
         }

@@ -79,6 +79,9 @@ struct HomeView: View {
             refreshSignedInUsernameLabel()
             await refreshLocalEventsFromCloudKit()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .planitEventDidChange)) { _ in
+            Task { await refreshLocalEventsFromCloudKit() }
+        }
     }
 
     @ViewBuilder

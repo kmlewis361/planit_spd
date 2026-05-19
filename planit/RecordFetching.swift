@@ -353,6 +353,25 @@ func fetchEventFromId(idString: String) async throws -> Event? {
     return event(from: record)
 }
 
+/// Updates an existing CloudKit `Event` record (same `id`; preserves `finalTimeData` on the record).
+func updateEventInCloudKit(_ event: Event) async throws {
+    guard let record = try await fetchEventRecordFromId(idString: event.id.uuidString) else {
+        throw NSError(domain: "PlanIt", code: 2, userInfo: [NSLocalizedDescriptionKey: "Event not found"])
+    }
+    let sortedProposed = event.proposedTimes.sorted { $0.startTime < $1.startTime }
+    let proposedTimesData = try JSONEncoder().encode(sortedProposed)
+    let inviteesForCloudKit = event.invitees
+        .map { normalizedPlanItUsername($0).lowercased() }
+        .filter { !$0.isEmpty }
+    record["name"] = event.name as CKRecordValue
+    record["description"] = event.description as CKRecordValue
+    record["duration"] = event.duration as CKRecordValue
+    record["proposedTimesData"] = proposedTimesData as CKRecordValue
+    record["invitees"] = inviteesForCloudKit as NSArray
+    let database = CKContainer.default().publicCloudDatabase
+    _ = try await database.save(record)
+}
+
 /// Saves the organizer’s confirmed meeting time on the CloudKit `Event` record (`finalTimeData`).
 func saveFinalTimeToCloudKit(_ finalTime: Time, eventIdString: String) async throws {
     guard let record = try await fetchEventRecordFromId(idString: eventIdString) else {

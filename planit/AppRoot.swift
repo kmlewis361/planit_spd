@@ -5,6 +5,8 @@ extension Notification.Name {
     static let planitEventResponsesDidChange = Notification.Name("planitEventResponsesDidChange")
     /// Posted after the organizer sets a final meeting time.
     static let planitEventFinalTimeDidChange = Notification.Name("planitEventFinalTimeDidChange")
+    /// Posted after the organizer updates event details (name, invitees, times, etc.).
+    static let planitEventDidChange = Notification.Name("planitEventDidChange")
 }
 
 var globalUsername: String = ""
