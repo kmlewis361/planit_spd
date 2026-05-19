@@ -10,6 +10,8 @@ struct HomeView: View {
     @State var localEvents: [Event] = events
     @State private var signedInUsernameLabel: String = ""
     @State private var loadErrorMessage: String?
+    /// Event IDs (UUID strings) where the signed-in user has submitted a response.
+    @State private var respondedEventIds: Set<String> = []
     var onRespond: ((UUID) -> Void)? = nil
     var onSeeDetails: ((UUID) -> Void)? = nil
     var onLoggedOut: (()-> Void)? = nil
@@ -83,35 +85,70 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .planitEventDidChange)) { _ in
             Task { await refreshLocalEventsFromCloudKit() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .planitEventResponsesDidChange)) { notification in
+            if let eventId = notification.object as? String {
+                respondedEventIds.insert(eventId)
+                localEvents = orderedHomeEvents(localEvents)
+            }
+        }
     }
 
     @ViewBuilder
     private func eventCard(_ event: Event) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(event.name)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
-
-            HStack(spacing: 20) {
-                Button("Respond") {
-                    onRespond?(event.id)
-                }
-                .buttonStyle(PlanItTextLinkButtonStyle())
-
-                Button("See details") {
-                    onSeeDetails?(event.id)
-                }
-                .buttonStyle(PlanItTextLinkButtonStyle())
-            }
-
-            if let finalTime = event.finalTime {
-                Text("Final time: \(formatTimeRange(finalTime))")
-                    .font(.subheadline.weight(.semibold))
+        let needsResponse = showsNeedsResponseDot(for: event)
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(event.name)
+                    .font(.title2.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 20) {
+                    Button("Respond") {
+                        onRespond?(event.id)
+                    }
+                    .buttonStyle(needsResponse ? PlanItTextLinkButtonStyle.accent : PlanItTextLinkButtonStyle.primary)
+
+                    Button("See details") {
+                        onSeeDetails?(event.id)
+                    }
+                    .buttonStyle(needsResponse ? PlanItTextLinkButtonStyle.primary : PlanItTextLinkButtonStyle.accent)
+                }
+
+                if let finalTime = event.finalTime {
+                    Text("Final time: \(formatTimeRange(finalTime))")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.leading, 9)
+            .padding(.bottom, 7)
+            .planItCard()
+
+            if needsResponse {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 10, height: 10)
+                    .padding(.top, 14)
+                    .padding(.leading, 6)
+                    .offset(x: 2)
+                    .accessibilityHidden(true)
             }
         }
-        .planItCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            needsResponse
+                ? "\(event.name). You have not responded yet."
+                : event.name
+        )
+    }
+
+    private func showsNeedsResponseDot(for event: Event) -> Bool {
+        !respondedEventIds.contains(event.id.uuidString)
+    }
+
+    private func orderedHomeEvents(_ events: [Event]) -> [Event] {
+        eventsSortedForHomeList(events, respondedEventIds: respondedEventIds)
     }
 
     private func formatTimeRange(_ time: Time) -> String {
@@ -134,13 +171,19 @@ struct HomeView: View {
     private func refreshLocalEventsFromCloudKit() async {
         if globalUsername == "" {
             localEvents = events
+            respondedEventIds = []
             onLoggedOut?()
             return
         }
         let me = normalizedPlanItUsername(globalUsername).lowercased()
         let fetched: [Event]
         do {
-            fetched = try await fetchEventsFromCloudKit(whereInviteeUsernameLowercased: me)
+            async let eventsTask = fetchEventsFromCloudKit(whereInviteeUsernameLowercased: me)
+            async let respondedTask = fetchEventIdsWhereUserHasResponded(usernameLowercased: me)
+            fetched = try await eventsTask
+            if let responded = try? await respondedTask {
+                respondedEventIds = responded
+            }
             loadErrorMessage = nil
         } catch {
             loadErrorMessage = "Couldn’t load your events right now. Please check your connection and iCloud, then try again."
@@ -151,14 +194,14 @@ struct HomeView: View {
         if let pending, !fetched.contains(where: { $0.id == pending.id }), eventIncludesInviteeLowercased(pending, usernameLowercased: me) {
             var merged = fetched
             merged.append(pending)
-            localEvents = eventsSortedByEarliestProposedTime(merged)
+            localEvents = orderedHomeEvents(merged)
             pendingHomeListEvent.wrappedValue = nil
             return
         }
         if pending != nil {
             pendingHomeListEvent.wrappedValue = nil
         }
-        localEvents = eventsSortedByEarliestProposedTime(fetched)
+        localEvents = orderedHomeEvents(fetched)
     }
 }
 

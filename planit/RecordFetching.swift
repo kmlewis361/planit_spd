@@ -469,6 +469,25 @@ func validEndBoundaryIndices(
     }
 }
 
+/// Event IDs where the given user has saved at least one `Response` row (`username` is stored lowercased).
+func fetchEventIdsWhereUserHasResponded(usernameLowercased: String) async throws -> Set<String> {
+    guard !usernameLowercased.isEmpty else { return [] }
+    let database = CKContainer.default().publicCloudDatabase
+    let predicate = NSPredicate(format: "username == %@", usernameLowercased)
+    let query = CKQuery(recordType: "Response", predicate: predicate)
+    let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil)
+    var eventIds = Set<String>()
+    eventIds.reserveCapacity(matchResults.count)
+    for (_, result) in matchResults {
+        if case .success(let record) = result,
+           let eventId = record["eventId"] as? String,
+           !eventId.isEmpty {
+            eventIds.insert(eventId)
+        }
+    }
+    return eventIds
+}
+
 /// Loads events where the signed-in PlanIt user appears in `invitees` (CloudKit **List** of **Strings**, lowercased; **Queryable** with `ANY invitees ==`).
 func fetchEventsFromCloudKit(whereInviteeUsernameLowercased usernameLowercased: String) async throws -> [Event] {
     guard !usernameLowercased.isEmpty else { return [] }
@@ -550,9 +569,25 @@ func earliestProposedStart(in event: Event) -> Date? {
 /// Soonest proposed availability first; events with no proposed slots sort last.
 func eventsSortedByEarliestProposedTime(_ events: [Event]) -> [Event] {
     events.sorted { lhs, rhs in
-        let left = earliestProposedStart(in: lhs) ?? .distantFuture
-        let right = earliestProposedStart(in: rhs) ?? .distantFuture
-        if left != right { return left < right }
-        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        compareEventsByEarliestProposedTime(lhs, rhs)
     }
+}
+
+/// Home list: unresponded events (soonest first), then responded events (soonest first).
+func eventsSortedForHomeList(_ events: [Event], respondedEventIds: Set<String>) -> [Event] {
+    events.sorted { lhs, rhs in
+        let lhsResponded = respondedEventIds.contains(lhs.id.uuidString)
+        let rhsResponded = respondedEventIds.contains(rhs.id.uuidString)
+        if lhsResponded != rhsResponded {
+            return !lhsResponded
+        }
+        return compareEventsByEarliestProposedTime(lhs, rhs)
+    }
+}
+
+private func compareEventsByEarliestProposedTime(_ lhs: Event, _ rhs: Event) -> Bool {
+    let left = earliestProposedStart(in: lhs) ?? .distantFuture
+    let right = earliestProposedStart(in: rhs) ?? .distantFuture
+    if left != right { return left < right }
+    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
 }
