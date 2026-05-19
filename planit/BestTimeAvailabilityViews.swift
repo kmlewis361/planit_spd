@@ -45,22 +45,33 @@ private struct InviteeAvailabilityLine: View {
     let status: InviteeAvailabilityStatus
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(displayName)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(nameColor)
+                .lineLimit(1)
 
-            if case .partiallyFree(let summary) = status {
-                Text(summary)
+            Spacer(minLength: 12)
+
+            if let trailing = trailingAnnotation {
+                Text(trailing.text)
                     .font(.caption)
-                    .foregroundStyle(PlanItTheme.availabilityPartial)
-            } else if case .notResponded = status {
-                Text("No response yet")
-                    .font(.caption)
-                    .foregroundStyle(PlanItTheme.availabilityNoResponse)
+                    .foregroundStyle(trailing.color)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var trailingAnnotation: (text: String, color: Color)? {
+        switch status {
+        case .notResponded:
+            return ("No response yet", PlanItTheme.availabilityNoResponse)
+        case .partiallyFree(let summary):
+            return (summary, PlanItTheme.availabilityPartial)
+        case .fullyFree, .notFree:
+            return nil
+        }
     }
 
     private var nameColor: Color {

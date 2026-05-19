@@ -52,9 +52,19 @@ struct EventDetailsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Who's invited?")
                         .planItSectionTitle()
-                    ForEach(event.invitees, id: \.self) { invitee in
-                        Text(invitee)
-                            .planItBodyOnCard()
+                    ForEach(Array(event.invitees.enumerated()), id: \.offset) { index, invitee in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(planItDisplayHandle(invitee))
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                            if index == 0 {
+                                Text("(organizer)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .planItCard()
@@ -95,6 +105,22 @@ struct EventDetailsView: View {
                         }
                     }
                 }
+
+                NavigationLink {
+                    EventAllResponsesView(
+                        eventId: eventId,
+                        initialEvent: event,
+                        initialResponses: eventResponses,
+                        pendingResponse: pendingResponse
+                    )
+                } label: {
+                    Text("See all responses")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 4)
+                }
+                .padding(.top, 4)
             }
             .padding()
         }
@@ -173,6 +199,12 @@ struct EventDetailsView: View {
             eventResponses = []
             errorMessage = "Couldn’t load responses right now. Please check your connection and iCloud, then try again."
         }
+    }
+
+    private func planItDisplayHandle(_ raw: String) -> String {
+        let normalized = normalizedPlanItUsername(raw)
+        guard !normalized.isEmpty else { return raw }
+        return normalized.hasPrefix("@") ? normalized : "@\(normalized)"
     }
 
     private func formatTimeRange(_ time: Time) -> String {

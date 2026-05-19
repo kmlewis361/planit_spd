@@ -17,6 +17,8 @@ struct TimeGridSelectionView: View {
     private let initialVisibleHour: Int
     private let slotMinutes: Int
     private let height: CGFloat
+    /// When true, the grid is display-only (no tap or paint selection).
+    private let readOnly: Bool
 
     /// 0 = the week that contains today; +1 = next week, −1 = previous.
     @State private var weekOffset: Int = 0
@@ -75,7 +77,8 @@ struct TimeGridSelectionView: View {
         endHour: Int = 24,
         initialVisibleHour: Int = 8,
         slotMinutes: Int = 30,
-        height: CGFloat = 320
+        height: CGFloat = 320,
+        readOnly: Bool = false
     ) {
         self._selectedTimes = selectedTimes
         self._locksAncestorVerticalScroll = locksAncestorVerticalScroll
@@ -86,6 +89,7 @@ struct TimeGridSelectionView: View {
         self.initialVisibleHour = initialVisibleHour
         self.slotMinutes = slotMinutes
         self.height = height
+        self.readOnly = readOnly
     }
 
     var body: some View {
@@ -206,6 +210,7 @@ struct TimeGridSelectionView: View {
     }
 
     private func handleSlotTap(at location: CGPoint, timeLabelWidth: CGFloat, cellWidth: CGFloat, cellHeight: CGFloat) {
+        guard !readOnly else { return }
         if let until = suppressTapSelectionUntil {
             if Date() < until { return }
             suppressTapSelectionUntil = nil
@@ -222,6 +227,7 @@ struct TimeGridSelectionView: View {
     }
 
     private func handlePaintDrag(at location: CGPoint, timeLabelWidth: CGFloat, cellWidth: CGFloat, cellHeight: CGFloat) {
+        guard !readOnly else { return }
         guard let slot = slotInGrid(at: location, timeLabelWidth: timeLabelWidth, cellWidth: cellWidth, cellHeight: cellHeight) else {
             return
         }
