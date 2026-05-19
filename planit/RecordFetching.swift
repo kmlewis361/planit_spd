@@ -332,24 +332,48 @@ private func dropStrictlyContainedIntervals(_ items: [(time: Time, votes: Int)])
     }
 }
 
-func fetchEventFromId(idString: String) async throws -> Event? {
+func fetchEventRecordFromId(idString: String) async throws -> CKRecord? {
     let database = CKContainer.default().publicCloudDatabase
     let predicate = NSPredicate(format: "id == %@", idString)
     let query = CKQuery(recordType: "Event", predicate: predicate)
-    do {
-        let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil)
-        for (_, result) in matchResults {
-            switch result {
-            case .success(let record):
-                return event(from: record)
-            case .failure(let error):
-                throw error
-            }
+    let (matchResults, _) = try await database.records(matching: query, inZoneWith: nil)
+    for (_, result) in matchResults {
+        switch result {
+        case .success(let record):
+            return record
+        case .failure(let error):
+            throw error
         }
-        return nil
-    } catch {
-        throw error
     }
+    return nil
+}
+
+func fetchEventFromId(idString: String) async throws -> Event? {
+    guard let record = try await fetchEventRecordFromId(idString: idString) else { return nil }
+    return event(from: record)
+}
+
+/// Saves the organizer’s confirmed meeting time on the CloudKit `Event` record (`finalTimeData`).
+func saveFinalTimeToCloudKit(_ finalTime: Time, eventIdString: String) async throws {
+    guard let record = try await fetchEventRecordFromId(idString: eventIdString) else {
+        throw NSError(domain: "PlanIt", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event not found"])
+    }
+    let data = try JSONEncoder().encode(finalTime)
+    record["finalTimeData"] = data as CKRecordValue
+    let database = CKContainer.default().publicCloudDatabase
+    _ = try await database.save(record)
+}
+
+/// Derives the meeting window from one contiguous block of selected slots spanning at least `meetingDuration`.
+func finalTimeWindowFromContiguousSelection(_ selectedSlots: Set<Time>, meetingDuration: TimeInterval) -> Time? {
+    guard !selectedSlots.isEmpty, meetingDuration > 0 else { return nil }
+    let sorted = selectedSlots.sorted { $0.startTime < $1.startTime }
+    for index in 1 ..< sorted.count {
+        if !proposedSlotsAreAdjacent(sorted[index - 1], sorted[index]) { return nil }
+    }
+    let window = Time(startTime: sorted[0].startTime, endTime: sorted[sorted.count - 1].endTime, snapMinutes: 30)
+    guard window.endTime.timeIntervalSince(window.startTime) + 0.5 >= meetingDuration else { return nil }
+    return window
 }
 
 /// Loads events where the signed-in PlanIt user appears in `invitees` (CloudKit **List** of **Strings**, lowercased; **Queryable** with `ANY invitees ==`).
@@ -400,6 +424,10 @@ func event(from record: CKRecord) -> Event {
     let proposedTimesData = record["proposedTimesData"] as? Data
     let proposedTimes = proposedTimesData.flatMap { try? JSONDecoder().decode([Time].self, from: $0) } ?? []
     let invitees = stringList(from: record, key: "invitees")
+    let finalTime: Time? = {
+        guard let data = record["finalTimeData"] as? Data else { return nil }
+        return try? JSONDecoder().decode(Time.self, from: data)
+    }()
     return Event(
         id: id,
         name: name,
@@ -408,6 +436,7 @@ func event(from record: CKRecord) -> Event {
         duration: eventDuration(from: record),
         proposedTimes: proposedTimes,
         bestTime: Time(startTime: Date(), endTime: Date()),
+        finalTime: finalTime,
         responses: []
     )
 }

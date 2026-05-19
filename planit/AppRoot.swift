@@ -3,6 +3,8 @@ import SwiftUI
 extension Notification.Name {
     /// Posted after submitting a response so `EventDetailsView` can refresh ranked times.
     static let planitEventResponsesDidChange = Notification.Name("planitEventResponsesDidChange")
+    /// Posted after the organizer sets a final meeting time.
+    static let planitEventFinalTimeDidChange = Notification.Name("planitEventFinalTimeDidChange")
 }
 
 var globalUsername: String = ""

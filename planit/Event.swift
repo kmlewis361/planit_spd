@@ -18,6 +18,8 @@ struct Event: Identifiable {
     /// Time blocks proposed by the event creator (the grid the invitees can choose from).
     var proposedTimes: [Time]
     var bestTime: Time
+    /// Organizer-confirmed meeting time; persisted to CloudKit when set.
+    var finalTime: Time?
 //    var bestLocation: String
     var responses: [Response]
 
@@ -29,6 +31,7 @@ struct Event: Identifiable {
         duration: TimeInterval,
         proposedTimes: [Time] = [],
         bestTime: Time,
+        finalTime: Time? = nil,
         responses: [Response]
     ) {
         self.id = id
@@ -38,6 +41,7 @@ struct Event: Identifiable {
         self.duration = duration
         self.proposedTimes = proposedTimes
         self.bestTime = bestTime
+        self.finalTime = finalTime
         self.responses = responses
     }
 }

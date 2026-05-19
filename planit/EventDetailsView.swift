@@ -46,8 +46,28 @@ struct EventDetailsView: View {
                     Text("Event length: \(formatEventDuration(event.duration))")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    if let finalTime = event.finalTime {
+                        Text("Final time: \(formatTimeRange(finalTime))")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
                 }
                 .planItCard()
+
+                if isOrganizer {
+                    HStack {
+                        Spacer(minLength: 0)
+                        NavigationLink {
+                            EventChooseFinalTimeView(eventId: eventId) { saved in
+                                event.finalTime = saved
+                            }
+                        } label: {
+                            Text(event.finalTime == nil ? "Choose final time" : "Change final time")
+                        }
+                        .buttonStyle(PlanItSecondaryButtonStyle())
+                        Spacer(minLength: 0)
+                    }
+                }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Who's invited?")
@@ -136,6 +156,18 @@ struct EventDetailsView: View {
             guard changedEventId == eventId.uuidString else { return }
             topTimesRefreshToken += 1
         }
+        .onReceive(NotificationCenter.default.publisher(for: .planitEventFinalTimeDidChange)) { notification in
+            guard let changedEventId = notification.object as? String else { return }
+            guard changedEventId == eventId.uuidString else { return }
+            Task { await refreshLocalEventFromCloudKit() }
+        }
+    }
+
+    private var isOrganizer: Bool {
+        guard let organizer = event.invitees.first else { return false }
+        let me = normalizedPlanItUsername(globalUsername).lowercased()
+        guard !me.isEmpty else { return false }
+        return normalizedPlanItUsername(organizer).lowercased() == me
     }
 
     private var bestTimesEmptyExplanation: String {
