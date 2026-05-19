@@ -28,6 +28,8 @@ struct EventChooseFinalTimeView: View {
 
     @State private var useManualSelection = false
     @State private var selectedBestTimeId: String?
+    @State private var customStartBoundaryIndex: Int = 0
+    @State private var customEndBoundaryIndex: Int = 1
     @State private var manualSelectedTimes: Set<Time> = []
 
     var body: some View {
@@ -51,6 +53,9 @@ struct EventChooseFinalTimeView: View {
                         .planItErrorBanner()
                 } else {
                     bestTimesSection
+                    if !useManualSelection {
+                        customWindowSection
+                    }
                     manualLink
                     if useManualSelection {
                         manualGridSection
@@ -113,6 +118,7 @@ struct EventChooseFinalTimeView: View {
             useManualSelection = false
             manualSelectedTimes = []
             selectedBestTimeId = option.time.id
+            resetCustomWindowSelection(for: option.time)
             validationMessage = nil
         } label: {
             ZStack(alignment: .topTrailing) {
@@ -154,6 +160,140 @@ struct EventChooseFinalTimeView: View {
         .buttonStyle(PlanItTextLinkButtonStyle())
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private var customWindowSection: some View {
+        if needsCustomWindowSelection, let window = selectedBestTimeWindow {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Choose start and end")
+                    .planItSectionTitle()
+                Text("This block is longer than your \(formatEventDuration(event.duration)) event. Pick any span within it (at least \(formatEventDuration(event.duration)), up to the full block).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    boundaryPicker(
+                        title: "Start",
+                        selection: $customStartBoundaryIndex,
+                        options: startBoundaryIndices,
+                        boundaries: blockBoundaries(for: window)
+                    )
+                    boundaryPicker(
+                        title: "End",
+                        selection: $customEndBoundaryIndex,
+                        options: endBoundaryIndices(for: window),
+                        boundaries: blockBoundaries(for: window)
+                    )
+                }
+                .planItCard()
+
+                if let preview = customWindowTime(in: window) {
+                    Text("Selected: \(formatTimeRange(preview)) (\(formatEventDuration(preview.endTime.timeIntervalSince(preview.startTime))))")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.top, 4)
+            .onChange(of: customStartBoundaryIndex) { _, _ in
+                clampEndIndexToValidRange(for: window)
+            }
+        }
+    }
+
+    private func boundaryPicker(
+        title: String,
+        selection: Binding<Int>,
+        options: [Int],
+        boundaries: [Date]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Picker(title, selection: selection) {
+                ForEach(options, id: \.self) { index in
+                    Text(formatClock(boundaries[index]))
+                        .tag(index)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(Color.accentColor)
+        }
+    }
+
+    private var selectedBestTimeWindow: Time? {
+        guard let selectedBestTimeId else { return nil }
+        return bestTimeOptions.first(where: { $0.time.id == selectedBestTimeId })?.time
+    }
+
+    private var needsCustomWindowSelection: Bool {
+        guard let window = selectedBestTimeWindow else { return false }
+        return windowSpanExceedsDuration(window, meetingDuration: event.duration)
+    }
+
+    private func blockBoundaries(for window: Time) -> [Date] {
+        timeBoundariesWithinBlock(window, proposedTimes: event.proposedTimes)
+    }
+
+    private var startBoundaryIndices: [Int] {
+        guard let window = selectedBestTimeWindow else { return [] }
+        let bounds = blockBoundaries(for: window)
+        guard bounds.count >= 2 else { return [] }
+        return Array(0 ..< bounds.count - 1)
+    }
+
+    private func endBoundaryIndices(for window: Time) -> [Int] {
+        let bounds = blockBoundaries(for: window)
+        return validEndBoundaryIndices(
+            startIndex: customStartBoundaryIndex,
+            boundaries: bounds,
+            block: window,
+            meetingDuration: event.duration
+        )
+    }
+
+    private func resetCustomWindowSelection(for window: Time) {
+        guard windowSpanExceedsDuration(window, meetingDuration: event.duration) else { return }
+        let bounds = blockBoundaries(for: window)
+        customStartBoundaryIndex = 0
+        let validEnds = validEndBoundaryIndices(
+            startIndex: 0,
+            boundaries: bounds,
+            block: window,
+            meetingDuration: event.duration
+        )
+        if let defaultEnd = validEnds.first(where: { idx in
+            bounds[idx].timeIntervalSince(bounds[0]) + 0.5 >= event.duration
+        }) ?? validEnds.first {
+            customEndBoundaryIndex = defaultEnd
+        } else {
+            customEndBoundaryIndex = max(1, bounds.count - 1)
+        }
+    }
+
+    private func clampEndIndexToValidRange(for window: Time) {
+        let valid = endBoundaryIndices(for: window)
+        if valid.isEmpty {
+            customEndBoundaryIndex = min(customStartBoundaryIndex + 1, blockBoundaries(for: window).count - 1)
+        } else if !valid.contains(customEndBoundaryIndex) {
+            customEndBoundaryIndex = valid.last ?? valid[0]
+        }
+    }
+
+    private func customWindowTime(in window: Time) -> Time? {
+        let bounds = blockBoundaries(for: window)
+        guard customStartBoundaryIndex >= 0,
+              customStartBoundaryIndex < bounds.count,
+              customEndBoundaryIndex > customStartBoundaryIndex,
+              customEndBoundaryIndex < bounds.count
+        else { return nil }
+        return Time(
+            startTime: bounds[customStartBoundaryIndex],
+            endTime: bounds[customEndBoundaryIndex],
+            snapMinutes: 30
+        )
     }
 
     @ViewBuilder
@@ -202,6 +342,11 @@ struct EventChooseFinalTimeView: View {
     @MainActor
     private func submitFinalTime() async {
         validationMessage = nil
+        if let trimValidation = validationMessageForCustomWindow() {
+            validationMessage = trimValidation
+            return
+        }
+
         guard let finalTime = resolvedFinalTime() else {
             if useManualSelection {
                 validationMessage = "Select one contiguous stretch on the grid that is at least \(formatEventDuration(event.duration)) long."
@@ -230,12 +375,27 @@ struct EventChooseFinalTimeView: View {
         }
     }
 
+    private func validationMessageForCustomWindow() -> String? {
+        guard !useManualSelection, needsCustomWindowSelection, let window = selectedBestTimeWindow else { return nil }
+        guard let custom = customWindowTime(in: window) else {
+            return "Choose a start and end time within the selected block."
+        }
+        let span = custom.endTime.timeIntervalSince(custom.startTime)
+        if span + 0.5 < event.duration {
+            return "Your selection must be at least \(formatEventDuration(event.duration)) long."
+        }
+        return nil
+    }
+
     private func resolvedFinalTime() -> Time? {
         if useManualSelection {
             return finalTimeWindowFromContiguousSelection(manualSelectedTimes, meetingDuration: event.duration)
         }
-        guard let selectedBestTimeId else { return nil }
-        return bestTimeOptions.first(where: { $0.time.id == selectedBestTimeId })?.time
+        guard let window = selectedBestTimeWindow else { return nil }
+        if needsCustomWindowSelection {
+            return customWindowTime(in: window)
+        }
+        return window
     }
 
     private func formatTimeRange(_ time: Time) -> String {
@@ -243,6 +403,10 @@ struct EventChooseFinalTimeView: View {
         let start = time.startTime.formatted(.dateTime.hour().minute())
         let end = time.endTime.formatted(.dateTime.hour().minute())
         return "\(day) \(start)–\(end)"
+    }
+
+    private func formatClock(_ date: Date) -> String {
+        date.formatted(.dateTime.hour().minute())
     }
 
     private func formatEventDuration(_ interval: TimeInterval) -> String {

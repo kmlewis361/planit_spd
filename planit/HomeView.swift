@@ -99,8 +99,22 @@ struct HomeView: View {
                 }
                 .buttonStyle(PlanItTextLinkButtonStyle())
             }
+
+            if let finalTime = event.finalTime {
+                Text("Final time: \(formatTimeRange(finalTime))")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .planItCard()
+    }
+
+    private func formatTimeRange(_ time: Time) -> String {
+        let day = time.startTime.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        let start = time.startTime.formatted(.dateTime.hour().minute())
+        let end = time.endTime.formatted(.dateTime.hour().minute())
+        return "\(day) \(start)–\(end)"
     }
 
     private func refreshSignedInUsernameLabel() {

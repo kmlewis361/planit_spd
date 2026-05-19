@@ -376,6 +376,59 @@ func finalTimeWindowFromContiguousSelection(_ selectedSlots: Set<Time>, meetingD
     return window
 }
 
+/// True when `window` spans strictly more than `meetingDuration` (organizer must pick a sub-slot).
+func windowSpanExceedsDuration(_ window: Time, meetingDuration: TimeInterval) -> Bool {
+    guard meetingDuration > 0 else { return false }
+    return window.endTime.timeIntervalSince(window.startTime) > meetingDuration + 0.5
+}
+
+/// Grid-aligned start/end instants inside `block` (slot starts plus the block’s end).
+func timeBoundariesWithinBlock(_ block: Time, proposedTimes: [Time]) -> [Date] {
+    let epsilon: TimeInterval = 0.5
+    let slots = proposedTimes
+        .filter { $0.startTime >= block.startTime - epsilon && $0.endTime <= block.endTime + epsilon }
+        .sorted { $0.startTime < $1.startTime }
+
+    var boundaries: [Date] = []
+    for slot in slots {
+        if boundaries.last.map({ abs($0.timeIntervalSince(slot.startTime)) > epsilon }) ?? true {
+            boundaries.append(slot.startTime)
+        }
+    }
+    if let lastEnd = slots.last?.endTime {
+        if boundaries.last.map({ abs($0.timeIntervalSince(lastEnd)) > epsilon }) ?? true {
+            boundaries.append(lastEnd)
+        }
+    }
+    if boundaries.isEmpty {
+        return [block.startTime, block.endTime]
+    }
+    if abs(boundaries[0].timeIntervalSince(block.startTime)) > epsilon {
+        boundaries.insert(block.startTime, at: 0)
+    }
+    if abs(boundaries[boundaries.count - 1].timeIntervalSince(block.endTime)) > epsilon {
+        boundaries.append(block.endTime)
+    }
+    return boundaries
+}
+
+/// End-boundary indices valid for a chosen start (span at least `meetingDuration`, within `block`).
+func validEndBoundaryIndices(
+    startIndex: Int,
+    boundaries: [Date],
+    block: Time,
+    meetingDuration: TimeInterval
+) -> [Int] {
+    guard startIndex >= 0, startIndex < boundaries.count else { return [] }
+    let start = boundaries[startIndex]
+    let minSpan = max(meetingDuration, 0)
+    return (startIndex + 1 ..< boundaries.count).filter { idx in
+        let end = boundaries[idx]
+        let span = end.timeIntervalSince(start)
+        return span + 0.5 >= minSpan && end <= block.endTime + 0.5
+    }
+}
+
 /// Loads events where the signed-in PlanIt user appears in `invitees` (CloudKit **List** of **Strings**, lowercased; **Queryable** with `ANY invitees ==`).
 func fetchEventsFromCloudKit(whereInviteeUsernameLowercased usernameLowercased: String) async throws -> [Event] {
     guard !usernameLowercased.isEmpty else { return [] }
