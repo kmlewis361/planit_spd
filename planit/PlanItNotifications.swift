@@ -11,11 +11,14 @@ import UIKit
 extension Notification.Name {
     /// Posted with the event `UUID` string as `object` to open `EventResponseView`.
     static let planitOpenEventResponse = Notification.Name("planitOpenEventResponse")
+    /// Posted with the event `UUID` string as `object` to open `EventDetailsView`.
+    static let planitOpenEventDetails = Notification.Name("planitOpenEventDetails")
 }
 
 enum PlanItNotifications {
     private static let inviteCreateSubscriptionPrefix = "event-invite-create-"
     private static let inviteUpdateSubscriptionPrefix = "event-invite-update-"
+    private static let finalTimeSubscriptionPrefix = "event-final-time-"
 
     private static var planItDatabase: CKDatabase {
         CKContainer.default().publicCloudDatabase
@@ -23,7 +26,7 @@ enum PlanItNotifications {
 
     // MARK: - Setup
 
-    /// Requests alert permission, registers for APNs, and saves a CloudKit query subscription for new invites.
+    /// Requests alert permission, registers for APNs, and saves CloudKit query subscriptions for invites and final times.
     @MainActor
     static func activateForSignedInUser() {
         let username = normalizedPlanItUsername(globalUsername).lowercased()
@@ -32,12 +35,13 @@ enum PlanItNotifications {
             await requestAuthorizationAndRegisterForRemoteNotifications()
             do {
                 try await ensureEventInviteSubscriptions(usernameLowercased: username)
+                try await ensureFinalTimeSubscription(usernameLowercased: username)
                 #if DEBUG
-                print("PlanIt: invite push subscriptions active for @\(username)")
+                print("PlanIt: push subscriptions active for @\(username)")
                 #endif
             } catch {
                 #if DEBUG
-                print("PlanIt: invite subscription failed: \(error.localizedDescription)")
+                print("PlanIt: push subscription failed: \(error.localizedDescription)")
                 #endif
             }
         }
@@ -64,7 +68,7 @@ enum PlanItNotifications {
             subscriptionID: "\(inviteCreateSubscriptionPrefix)\(usernameLowercased)",
             options: [.firesOnRecordCreation]
         )
-        createSubscription.notificationInfo = notificationInfo(alertBody: alertBody)
+        createSubscription.notificationInfo = eventNotificationInfo(alertBody: alertBody)
         _ = try await planItDatabase.save(createSubscription)
 
         // Fires when an organizer adds this user via `newlyInvited` on event edit (see updateEventInCloudKit).
@@ -74,11 +78,24 @@ enum PlanItNotifications {
             subscriptionID: "\(inviteUpdateSubscriptionPrefix)\(usernameLowercased)",
             options: [.firesOnRecordUpdate]
         )
-        updateSubscription.notificationInfo = notificationInfo(alertBody: alertBody)
+        updateSubscription.notificationInfo = eventNotificationInfo(alertBody: alertBody)
         _ = try await planItDatabase.save(updateSubscription)
     }
 
-    private static func notificationInfo(alertBody: String) -> CKSubscription.NotificationInfo {
+    /// Fires when the organizer sets or updates `finalTimeData` (see `saveFinalTimeToCloudKit`).
+    private static func ensureFinalTimeSubscription(usernameLowercased: String) async throws {
+        let alertBody = "A final time was set for your PlanIt event. Tap to view details."
+        let subscription = CKQuerySubscription(
+            recordType: "Event",
+            predicate: NSPredicate(format: "ANY finalTimeNotifiedInvitees == %@", usernameLowercased),
+            subscriptionID: "\(finalTimeSubscriptionPrefix)\(usernameLowercased)",
+            options: [.firesOnRecordUpdate]
+        )
+        subscription.notificationInfo = eventNotificationInfo(alertBody: alertBody)
+        _ = try await planItDatabase.save(subscription)
+    }
+
+    private static func eventNotificationInfo(alertBody: String) -> CKSubscription.NotificationInfo {
         let info = CKSubscription.NotificationInfo()
         info.alertBody = alertBody
         info.soundName = "default"
@@ -91,8 +108,13 @@ enum PlanItNotifications {
 
     @MainActor
     static func handleNotificationResponse(_ response: UNNotificationResponse) async {
-        guard let eventId = await eventIdFromNotificationResponse(response) else { return }
-        openEventResponse(eventId: eventId)
+        guard let destination = await notificationDestination(from: response) else { return }
+        switch destination {
+        case .eventResponse(let eventId):
+            openEventResponse(eventId: eventId)
+        case .eventDetails(let eventId):
+            openEventDetails(eventId: eventId)
+        }
     }
 
     @MainActor
@@ -100,17 +122,43 @@ enum PlanItNotifications {
         NotificationCenter.default.post(name: .planitOpenEventResponse, object: eventId.uuidString)
     }
 
-    private static func eventIdFromNotificationResponse(_ response: UNNotificationResponse) async -> UUID? {
-        await eventIdFromCloudKitUserInfo(response.notification.request.content.userInfo)
+    @MainActor
+    static func openEventDetails(eventId: UUID) {
+        NotificationCenter.default.post(name: .planitOpenEventDetails, object: eventId.uuidString)
     }
 
-    private static func eventIdFromCloudKitUserInfo(_ userInfo: [AnyHashable: Any]) async -> UUID? {
-        guard let queryNotification = CKQueryNotification(fromRemoteNotificationDictionary: userInfo),
-              let recordID = queryNotification.recordID else { return nil }
+    private enum NotificationDestination {
+        case eventResponse(UUID)
+        case eventDetails(UUID)
+    }
+
+    private static func notificationDestination(from response: UNNotificationResponse) async -> NotificationDestination? {
+        guard let queryNotification = CKQueryNotification(
+            fromRemoteNotificationDictionary: response.notification.request.content.userInfo
+        ) else { return nil }
+
+        guard let eventId = await eventIdFromEventNotification(queryNotification) else { return nil }
+
+        let subscriptionID = queryNotification.subscriptionID ?? ""
+        if subscriptionID.hasPrefix(finalTimeSubscriptionPrefix) {
+            return .eventDetails(eventId)
+        }
+        return .eventResponse(eventId)
+    }
+
+    private static func eventIdFromEventNotification(_ queryNotification: CKQueryNotification) async -> UUID? {
+        if let fields = queryNotification.recordFields,
+           let idString = fields["id"] as? String,
+           let eventId = UUID(uuidString: idString) {
+            return eventId
+        }
+        guard let recordID = queryNotification.recordID else { return nil }
         do {
             let record = try await planItDatabase.record(for: recordID)
-            guard let idString = record["id"] as? String else { return nil }
-            return UUID(uuidString: idString)
+            guard record.recordType == "Event",
+                  let idString = record["id"] as? String,
+                  let eventId = UUID(uuidString: idString) else { return nil }
+            return eventId
         } catch {
             return nil
         }

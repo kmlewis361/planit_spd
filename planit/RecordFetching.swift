@@ -389,17 +389,21 @@ func updateEventInCloudKit(
     record["proposedTimesData"] = proposedTimesData as CKRecordValue
     record["invitees"] = inviteesForCloudKit as NSArray
     record["newlyInvited"] = newlyInvited as NSArray
+    record["finalTimeNotifiedInvitees"] = [] as NSArray
     let database = CKContainer.default().publicCloudDatabase
     _ = try await database.save(record)
 }
 
 /// Saves the organizer’s confirmed meeting time on the CloudKit `Event` record (`finalTimeData`).
+/// Sets `finalTimeNotifiedInvitees` so invitee update subscriptions fire (same pattern as `newlyInvited`).
 func saveFinalTimeToCloudKit(_ finalTime: Time, eventIdString: String) async throws {
     guard let record = try await fetchEventRecordFromId(idString: eventIdString) else {
         throw NSError(domain: "PlanIt", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event not found"])
     }
     let data = try JSONEncoder().encode(finalTime)
     record["finalTimeData"] = data as CKRecordValue
+    let invitees = stringList(from: record, key: "invitees")
+    record["finalTimeNotifiedInvitees"] = invitees as NSArray
     let database = CKContainer.default().publicCloudDatabase
     _ = try await database.save(record)
 }

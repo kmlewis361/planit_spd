@@ -126,6 +126,12 @@ struct AppRoot: View {
             path = NavigationPath()
             path.append(Route.eventResponse(eventId: eventId))
         }
+        .onReceive(NotificationCenter.default.publisher(for: .planitOpenEventDetails)) { notification in
+            guard let idString = notification.object as? String,
+                  let eventId = UUID(uuidString: idString) else { return }
+            path = NavigationPath()
+            path.append(Route.eventDetails(eventId: eventId))
+        }
     }
 }
 
