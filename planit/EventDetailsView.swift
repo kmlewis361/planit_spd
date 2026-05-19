@@ -46,28 +46,8 @@ struct EventDetailsView: View {
                     Text("Event length: \(formatEventDuration(event.duration))")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    if let finalTime = event.finalTime {
-                        Text("Final time: \(formatTimeRange(finalTime))")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
                 }
                 .planItCard()
-
-                if isOrganizer {
-                    HStack {
-                        Spacer(minLength: 0)
-                        NavigationLink {
-                            EventChooseFinalTimeView(eventId: eventId) { saved in
-                                event.finalTime = saved
-                            }
-                        } label: {
-                            Text(event.finalTime == nil ? "Choose final time" : "Change final time")
-                        }
-                        .buttonStyle(PlanItSecondaryButtonStyle())
-                        Spacer(minLength: 0)
-                    }
-                }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Who's invited?")
@@ -88,6 +68,10 @@ struct EventDetailsView: View {
                     }
                 }
                 .planItCard()
+
+                if event.finalTime != nil || isOrganizer {
+                    finalTimeSection
+                }
 
                 Text("Best times")
                     .planItSectionTitle()
@@ -161,6 +145,40 @@ struct EventDetailsView: View {
             guard changedEventId == eventId.uuidString else { return }
             Task { await refreshLocalEventFromCloudKit() }
         }
+    }
+
+    @ViewBuilder
+    private var finalTimeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Final time:")
+                .planItSectionTitle()
+            if let finalTime = event.finalTime {
+                Text(formatTimeRange(finalTime))
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text("Not set yet")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if isOrganizer {
+                HStack {
+                    Spacer(minLength: 0)
+                    NavigationLink {
+                        EventChooseFinalTimeView(eventId: eventId) { saved in
+                            event.finalTime = saved
+                        }
+                    } label: {
+                        Text(event.finalTime == nil ? "Choose final time" : "Change final time")
+                    }
+                    .buttonStyle(PlanItSecondaryButtonStyle())
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .planItCard()
     }
 
     private var isOrganizer: Bool {

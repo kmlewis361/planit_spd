@@ -20,6 +20,7 @@ struct EventChooseFinalTimeView: View {
         responses: []
     )
     @State private var bestTimeOptions: [(time: Time, votes: Int)] = []
+    @State private var eventResponses: [Response] = []
     @State private var isLoading = true
     @State private var isSubmitting = false
     @State private var errorMessage: String?
@@ -93,6 +94,11 @@ struct EventChooseFinalTimeView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
+            Text("Gray: no response · Green: free for full window · Light green: partial · Red: not free")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(bestTimeOptions, id: \.time.id) { option in
                     bestTimeOptionRow(option)
@@ -109,21 +115,22 @@ struct EventChooseFinalTimeView: View {
             selectedBestTimeId = option.time.id
             validationMessage = nil
         } label: {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(formatTimeRange(option.time))
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Text("\(option.votes) fully available")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
+            ZStack(alignment: .topTrailing) {
+                BestTimeWindowCard(
+                    timeLabel: formatTimeRange(option.time),
+                    fullyAvailableCount: option.votes,
+                    inviteeRows: inviteeAvailabilityRows(
+                        window: option.time,
+                        invitees: event.invitees,
+                        proposedTimes: event.proposedTimes,
+                        responses: eventResponses
+                    )
+                )
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.45))
+                    .padding(12)
             }
-            .planItCard()
             .overlay(
                 RoundedRectangle(cornerRadius: PlanItTheme.cardCornerRadius, style: .continuous)
                     .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
@@ -178,6 +185,7 @@ struct EventChooseFinalTimeView: View {
             }
             event = fetched
             let responses = try await fetchResponsesForEvent(eventIdString: eventId.uuidString)
+            eventResponses = responses
             let ranked = topAvailabilityWindows(
                 proposedTimes: fetched.proposedTimes,
                 responses: responses,
