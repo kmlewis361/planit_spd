@@ -21,66 +21,65 @@ struct EventResponseView: View {
     @State private var existingResponseRecord: CKRecord?
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(event.name)
-                        .font(.title.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(event.name)
+                    .font(.title.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Event description")
-                            .planItSectionTitle()
-                        Text(event.description.isEmpty ? "—" : event.description)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Event description")
+                        .planItSectionTitle()
+                    Text(event.description.isEmpty ? "—" : event.description)
+                        .planItBodyOnCard()
+                }
+                .planItCard()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Who's invited?")
+                        .planItSectionTitle()
+                    ForEach(event.invitees, id: \.self) { invitee in
+                        Text(invitee)
                             .planItBodyOnCard()
                     }
-                    .planItCard()
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Who's invited?")
-                            .planItSectionTitle()
-                        ForEach(event.invitees, id: \.self) { invitee in
-                            Text(invitee)
-                                .planItBodyOnCard()
-                        }
-                    }
-                    .planItCard()
-
-                    Text("What times work?")
-                        .planItSectionTitle()
-
-                    if isLoadingEvent {
-                        ProgressView()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .planItErrorBanner()
-                    }
-
-                    TimeGridSelectionView(
-                        selectedTimes: $selectedTimes,
-                        allowedSlots: Set(event.proposedTimes)
-                    )
-                    .padding(8)
-                    .background(PlanItTheme.fieldBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: PlanItTheme.cardCornerRadius, style: .continuous))
                 }
-                .padding()
-            }
+                .planItCard()
 
-            HStack {
-                Spacer(minLength: 0)
+                Text("What times work?")
+                    .planItSectionTitle()
+
+                if isLoadingEvent {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let errorMessage {
+                    Text(errorMessage)
+                        .planItErrorBanner()
+                }
+
+                TimeGridSelectionView(
+                    selectedTimes: $selectedTimes,
+                    allowedSlots: Set(event.proposedTimes)
+                )
+                .padding(8)
+                .background(PlanItTheme.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: PlanItTheme.cardCornerRadius, style: .continuous))
+
                 Button("I'm done, show me the details!") {
                     Task { await submitResponseToCloudKitAndContinue() }
                 }
-                .buttonStyle(PlanItPrimaryButtonStyle())
+                .buttonStyle(PlanItPrimaryButtonStyle(fillsAvailableWidth: true))
                 .disabled(isSubmitting || isLoadingEvent)
-                Spacer(minLength: 0)
+                .padding(.top, 8)
             }
-            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal)
+        .padding(.bottom)
         .planItScreen()
         .task {
             await loadEventFromCloudKit()

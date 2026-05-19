@@ -24,15 +24,31 @@ enum PlanItTheme {
 // MARK: - Buttons
 
 struct PlanItPrimaryButtonStyle: ButtonStyle {
+    /// When true, the label uses the available width (wraps at large Dynamic Type) instead of a single expanding pill.
+    var fillsAvailableWidth: Bool = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.title3.weight(.semibold))
+            .multilineTextAlignment(.center)
             .foregroundStyle(.white)
             .padding(.horizontal, PlanItTheme.pillHorizontalPadding)
             .padding(.vertical, 14)
             .background(Color.accentColor.opacity(configuration.isPressed ? 0.82 : 1))
             .clipShape(Capsule())
-            .fixedSize(horizontal: true, vertical: false)
+            .modifier(PlanItPillWidthModifier(fillsAvailableWidth: fillsAvailableWidth))
+    }
+}
+
+private struct PlanItPillWidthModifier: ViewModifier {
+    let fillsAvailableWidth: Bool
+
+    func body(content: Content) -> some View {
+        if fillsAvailableWidth {
+            content.frame(maxWidth: .infinity)
+        } else {
+            content.fixedSize(horizontal: true, vertical: false)
+        }
     }
 }
 
