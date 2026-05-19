@@ -132,15 +132,15 @@ struct HomeView: View {
         let pending = pendingHomeListEvent.wrappedValue
         if let pending, !fetched.contains(where: { $0.id == pending.id }), eventIncludesInviteeLowercased(pending, usernameLowercased: me) {
             var merged = fetched
-            merged.insert(pending, at: 0)
-            localEvents = merged
+            merged.append(pending)
+            localEvents = eventsSortedByEarliestProposedTime(merged)
             pendingHomeListEvent.wrappedValue = nil
             return
         }
         if pending != nil {
             pendingHomeListEvent.wrappedValue = nil
         }
-        localEvents = fetched
+        localEvents = eventsSortedByEarliestProposedTime(fetched)
     }
 }
 

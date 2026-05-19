@@ -77,6 +77,38 @@ private func proposedSlotsAreAdjacent(_ a: Time, _ b: Time) -> Bool {
     abs(a.endTime.timeIntervalSince(b.startTime)) < 2
 }
 
+/// True when some contiguous run of `proposedTimes` spans at least `meetingDuration` (same rule as best-times windows).
+func hasContiguousProposedSpan(atLeastDuration meetingDuration: TimeInterval, in proposedTimes: [Time]) -> Bool {
+    guard meetingDuration > 0 else { return !proposedTimes.isEmpty }
+    guard !proposedTimes.isEmpty else { return false }
+
+    let sorted = proposedTimes.sorted { $0.startTime < $1.startTime }
+    var chains: [[Time]] = []
+    var current: [Time] = []
+    for slot in sorted {
+        if let last = current.last, proposedSlotsAreAdjacent(last, slot) {
+            current.append(slot)
+        } else {
+            if !current.isEmpty { chains.append(current) }
+            current = [slot]
+        }
+    }
+    if !current.isEmpty { chains.append(current) }
+
+    for chain in chains {
+        let n = chain.count
+        for i in 0..<n {
+            for j in i..<n {
+                let span = chain[j].endTime.timeIntervalSince(chain[i].startTime)
+                if span + 0.5 >= meetingDuration {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
 /// Ranks contiguous runs of **proposed** slots whose span is at least `meetingDuration`.
 /// A respondent counts toward a window only if they selected **every** atomic slot in that window.
 /// Pass `limit: nil` to rank every qualifying window (for tiered UI selection).
@@ -385,5 +417,20 @@ func eventIncludesInviteeLowercased(_ event: Event, usernameLowercased: String) 
     guard !usernameLowercased.isEmpty else { return false }
     return event.invitees.contains {
         normalizedPlanItUsername($0).lowercased() == usernameLowercased
+    }
+}
+
+/// Earliest proposed slot start for list ordering.
+func earliestProposedStart(in event: Event) -> Date? {
+    event.proposedTimes.min(by: { $0.startTime < $1.startTime })?.startTime
+}
+
+/// Soonest proposed availability first; events with no proposed slots sort last.
+func eventsSortedByEarliestProposedTime(_ events: [Event]) -> [Event] {
+    events.sorted { lhs, rhs in
+        let left = earliestProposedStart(in: lhs) ?? .distantFuture
+        let right = earliestProposedStart(in: rhs) ?? .distantFuture
+        if left != right { return left < right }
+        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
     }
 }
