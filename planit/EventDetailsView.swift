@@ -30,101 +30,70 @@ struct EventDetailsView: View {
         var id: String { time.id }
     }
     var body: some View {
-        VStack{
-            Text(event.name)
-                .font(.title)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-            Text("Event description:")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            Text(event.description)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.bottom)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(event.name)
+                    .font(.title.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Event length: \(formatEventDuration(event.duration))")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.bottom, 4)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Event description")
+                        .planItSectionTitle()
+                    Text(event.description.isEmpty ? "—" : event.description)
+                        .planItBodyOnCard()
+                    Text("Event length: \(formatEventDuration(event.duration))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .planItCard()
 
-            Text("Who's invited?")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            ForEach(event.invitees, id: \.self) {invitee in
-                Text(invitee)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-            }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Who's invited?")
+                        .planItSectionTitle()
+                    ForEach(event.invitees, id: \.self) { invitee in
+                        Text(invitee)
+                            .planItBodyOnCard()
+                    }
+                }
+                .planItCard()
 
-            Text("Best times (everyone free for the full length):")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.top)
-            if isLoadingTopTimes {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-            } else if let errorMessage {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Color.secondary.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal)
-            } else if topTimes.isEmpty {
-                Text(bestTimesEmptyExplanation)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(topTimes) { ranked in
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(formatTimeRange(ranked.time))
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Text("\(ranked.votes)")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
+                Text("Best times (everyone free for the full length)")
+                    .planItSectionTitle()
+
+                Group {
+                    if isLoadingTopTimes {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if let errorMessage {
+                        Text(errorMessage)
+                            .planItErrorBanner()
+                    } else if topTimes.isEmpty {
+                        Text(bestTimesEmptyExplanation)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(topTimes) { ranked in
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(formatTimeRange(ranked.time))
+                                        .font(.body)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Text("\(ranked.votes)")
+                                        .font(.callout.weight(.semibold))
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
                         }
                     }
                 }
-                .padding(.horizontal)
+                .planItCard()
             }
-            //add some stuff for showing more times and who's free
-            
-            
-                
-           
-            Spacer()
-            
-           
+            .padding()
         }
+        .planItScreen()
         .task {
             await refreshLocalEventFromCloudKit()
         }
@@ -136,7 +105,6 @@ struct EventDetailsView: View {
             guard changedEventId == eventId.uuidString else { return }
             topTimesRefreshToken += 1
         }
-        .padding()
     }
 
     private var bestTimesEmptyExplanation: String {

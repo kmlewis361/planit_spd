@@ -12,6 +12,7 @@ struct planitApp: App {
     var body: some Scene {
         WindowGroup {
             AppRoot()
+                .tint(.accentColor)
         }
     }
 }

@@ -21,88 +21,66 @@ struct EventResponseView: View {
     @State private var existingResponseRecord: CKRecord?
 
     var body: some View {
-        VStack{
-            Text(event.name)
-                .font(.title)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(event.name)
+                        .font(.title.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Event description")
+                            .planItSectionTitle()
+                        Text(event.description.isEmpty ? "—" : event.description)
+                            .planItBodyOnCard()
+                    }
+                    .planItCard()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Who's invited?")
+                            .planItSectionTitle()
+                        ForEach(event.invitees, id: \.self) { invitee in
+                            Text(invitee)
+                                .planItBodyOnCard()
+                        }
+                    }
+                    .planItCard()
+
+                    Text("What times work?")
+                        .planItSectionTitle()
+
+                    if isLoadingEvent {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .planItErrorBanner()
+                    }
+
+                    TimeGridSelectionView(
+                        selectedTimes: $selectedTimes,
+                        allowedSlots: Set(event.proposedTimes)
+                    )
+                    .padding(8)
+                    .background(PlanItTheme.fieldBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: PlanItTheme.cardCornerRadius, style: .continuous))
+                }
                 .padding()
-            Text("Event description:")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            Text(event.description)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.bottom)
-            Text("Who's invited?")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            ForEach(event.invitees, id: \.self) {invitee in
-                Text(invitee)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
             }
 
-            Text("What times work?")
-                .font(.headline)
-                .foregroundStyle(.accent)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.top)
-
-            if isLoadingEvent {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-            }
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Color.secondary.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal)
-                    .padding(.bottom, 6)
-            }
-
-            TimeGridSelectionView(
-                selectedTimes: $selectedTimes,
-                allowedSlots: Set(event.proposedTimes)
-            )
-            .padding(.horizontal)
-           
             Button("I'm done, show me the details!") {
                 Task { await submitResponseToCloudKitAndContinue() }
             }
+            .buttonStyle(PlanItPrimaryButtonStyle())
             .disabled(isSubmitting || isLoadingEvent)
-            .font(.title2)
             .padding()
-                
-           
-            Spacer()
-            
-           
         }
+        .planItScreen()
         .task {
             await loadEventFromCloudKit()
         }
-        .padding()
     }
 
     @MainActor

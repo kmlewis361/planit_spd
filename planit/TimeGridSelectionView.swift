@@ -49,12 +49,12 @@ struct TimeGridSelectionView: View {
     private let scrollRowHeight: CGFloat = 22
 
     // MARK: Grid contrast (readable but lighter borders than the previous pass)
-    private var gridLineColor: Color { Color.primary.opacity(0.17) }
+    private var gridLineColor: Color { Color.primary.opacity(0.14) }
     private let gridCellStrokeWidth: CGFloat = 0.5
-    private var gridChromeBackground: Color { Color.primary.opacity(0.065) }
-    private var gridAvailableSlotFill: Color { Color.primary.opacity(0.035) }
-    private var gridDisabledSlotFill: Color { Color.primary.opacity(0.12) }
-    private var gridSelectedSlotFill: Color { Color.accentColor.opacity(0.38) }
+    private var gridChromeBackground: Color { PlanItTheme.fieldBackground }
+    private var gridAvailableSlotFill: Color { Color.primary.opacity(0.05) }
+    private var gridDisabledSlotFill: Color { Color.primary.opacity(0.1) }
+    private var gridSelectedSlotFill: Color { Color.accentColor.opacity(0.88) }
     private var timeLabelColor: Color { Color.primary.opacity(0.68) }
     private var headerSecondaryTextColor: Color { Color.primary.opacity(0.52) }
 

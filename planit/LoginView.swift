@@ -37,9 +37,7 @@ struct LoginView: View {
         VStack(spacing: 16) {
             Spacer(minLength: 24)
             Text("PlanIt")
-                .font(.largeTitle)
-                .fontWeight(.semibold)
-                .foregroundStyle(Color.accentColor)
+                .planItScreenTitle()
 
             Group {
                 switch phase {
@@ -62,13 +60,15 @@ struct LoginView: View {
                         Button("Try again") {
                             Task { await bootstrap() }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(PlanItPrimaryButtonStyle())
+                        .padding(.horizontal, 8)
 
                         if showsOpenSettings(for: reason) {
                             Button("Open Settings") {
                                 openSystemSettings()
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(PlanItSecondaryButtonStyle())
+                            .padding(.horizontal, 8)
                         }
 
                         Link("Apple Support — iCloud", destination: URL(string: "https://support.apple.com/icloud")!)
@@ -95,7 +95,8 @@ struct LoginView: View {
                     Button("Try again") {
                         Task { await bootstrap() }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(PlanItPrimaryButtonStyle())
+                    .padding(.horizontal, 8)
 
                     Link("Apple — Designing a CloudKit database", destination: URL(string: "https://developer.apple.com/documentation/cloudkit/designing-and-creating-a-cloudkit-database")!)
                         .font(.footnote)
@@ -123,12 +124,14 @@ struct LoginView: View {
                     TextField("username", text: $chosenUsername)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 280)
+                        .multilineTextAlignment(.center)
+                        .planItField()
+                        .padding(.horizontal, 24)
                     Button("Continue") {
                         Task { await saveNewUsername() }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(PlanItPrimaryButtonStyle())
+                    .padding(.horizontal, 24)
                     .disabled(chosenUsername.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
 
                 case .returning(let username):
@@ -140,7 +143,8 @@ struct LoginView: View {
                     Button("Continue") {
                         onLogin?(false)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(PlanItPrimaryButtonStyle())
+                    .padding(.horizontal, 24)
                     .padding(.top, 8)
 
                 case .saving:
@@ -160,6 +164,7 @@ struct LoginView: View {
             Spacer()
         }
         .padding()
+        .planItScreen()
         .task {
             await bootstrap()
         }

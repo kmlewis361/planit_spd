@@ -26,23 +26,22 @@ struct EventCreationView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                TextField("Event Name", text: $event.name)
-                    .font(.title)
-                    .foregroundStyle(.accent)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                TextField("Event name", text: $event.name)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .planItField()
 
                 Text("Add a description!")
-                    .font(.headline)
-                    .foregroundStyle(.accent)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .planItSectionTitle()
 
-                TextField("Event description", text: $event.description)
+                TextField("Event description", text: $event.description, axis: .vertical)
+                    .lineLimit(3...6)
                     .font(.body)
                     .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .planItField()
+
+                Text("Event duration")
+                    .planItSectionTitle()
 
                 Stepper(
                     value: Binding(
@@ -52,17 +51,14 @@ struct EventCreationView: View {
                     in: 30...480,
                     step: 15
                 ) {
-                    Text("Event duration: \(Int(event.duration / 60)) minutes")
+                    Text("\(Int(event.duration / 60)) minutes")
                         .font(.body)
                         .foregroundStyle(.primary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .planItField()
 
                 Text("Who's invited?")
-                    .font(.headline)
-                    .foregroundStyle(.accent)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .planItSectionTitle()
 
                 if !organizerPlanItUsername.isEmpty {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -78,11 +74,8 @@ struct EventCreationView: View {
 
                 inviteesAutocompleteSection
 
-                Text("Propose times:")
-                    .font(.headline)
-                    .foregroundStyle(.accent)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Propose times")
+                    .planItSectionTitle()
                     .padding(.top, 4)
 
                 TimeGridSelectionView(
@@ -92,6 +85,9 @@ struct EventCreationView: View {
                     slotMinutes: 30,
                     height: 320
                 )
+                .padding(8)
+                .background(PlanItTheme.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: PlanItTheme.cardCornerRadius, style: .continuous))
 
                 Button("Send it!") {
                     // Saves the event to CloudKit (public database).
@@ -136,13 +132,14 @@ struct EventCreationView: View {
                         }
                     }
                 }
-                .font(.title2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .buttonStyle(PlanItPrimaryButtonStyle())
+                .padding(.top, 8)
 
                 Color.clear.frame(height: 24)
             }
             .padding()
         }
+        .planItScreen()
         .scrollDismissesKeyboard(.interactively)
         .scrollDisabled(lockOuterScrollForTimeGridPaint)
     }
@@ -156,8 +153,7 @@ struct EventCreationView: View {
                 .autocorrectionDisabled()
                 .keyboardType(.asciiCapable)
                 .textContentType(nil)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .planItField()
 
             if inviteAutocompleteSearching {
                 HStack(spacing: 8) {
@@ -192,12 +188,8 @@ struct EventCreationView: View {
                         }
                     }
                 }
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                )
+                .background(PlanItTheme.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: PlanItTheme.fieldCornerRadius, style: .continuous))
             } else if inviteAutocompleteShowNoMatches {
                 Text("No matching PlanIt users for that text.")
                     .font(.caption)

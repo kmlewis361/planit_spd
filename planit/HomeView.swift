@@ -14,74 +14,64 @@ struct HomeView: View {
     var onSeeDetails: ((UUID) -> Void)? = nil
     var onLoggedOut: (()-> Void)? = nil
     var onCreateEvent: (()-> Void)? = nil
-//    var username: String = ""
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
                 if !signedInUsernameLabel.isEmpty {
                     Text("@\(planItHandleForDisplay(signedInUsernameLabel))")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.accent)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        // Nudge down slightly so cap height lines up with the plus glyph’s optical center.
-                        .offset(y: 2)
                 }
                 Spacer(minLength: 0)
-                Button("Create EVent", systemImage: "plus") {
+                Button {
                     onCreateEvent?()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .background(PlanItTheme.fieldBackground)
+                        .clipShape(Circle())
                 }
-                .font(.title)
-                .labelStyle(.iconOnly)
                 .buttonStyle(.plain)
                 .accessibilityLabel("Create event")
             }
-            .padding(.top)
-            .padding(.bottom, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
+            Text("My Plans")
+                .planItScreenTitle()
+                .padding(.bottom, 12)
 
             if let loadErrorMessage {
                 HStack(spacing: 10) {
                     Text(loadErrorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
                     Spacer(minLength: 0)
                     Button("Dismiss") { self.loadErrorMessage = nil }
                         .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
                         .buttonStyle(.plain)
                 }
-                .padding(10)
-                .background(Color.secondary.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(.bottom, 6)
+                .planItErrorBanner()
+                .padding(.bottom, 10)
             }
 
-            ForEach(localEvents) { event in
-                VStack {
-                    if(!event.name.isEmpty){
-                        Text(event.name)
-                            .font(.title2)
-                        
-                        HStack {
-                            Spacer()
-                            Button("Respond") {
-                                onRespond?(event.id)
-                            }
-                            Spacer()
-                            Button("See details") {
-                                onSeeDetails?(event.id)
-                            }
-                            Spacer()
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(localEvents) { event in
+                        if !event.name.isEmpty {
+                            eventCard(event)
                         }
-                    
                     }
                 }
-                .padding(.vertical, 6)
+                .padding(.bottom, 8)
             }
-            Spacer()
         }
         .padding(.horizontal)
         .padding(.bottom)
+        .planItScreen()
         .onAppear {
             refreshSignedInUsernameLabel()
         }
@@ -89,6 +79,28 @@ struct HomeView: View {
             refreshSignedInUsernameLabel()
             await refreshLocalEventsFromCloudKit()
         }
+    }
+
+    @ViewBuilder
+    private func eventCard(_ event: Event) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(event.name)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+
+            HStack(spacing: 20) {
+                Button("Respond") {
+                    onRespond?(event.id)
+                }
+                .buttonStyle(PlanItTextLinkButtonStyle())
+
+                Button("See details") {
+                    onSeeDetails?(event.id)
+                }
+                .buttonStyle(PlanItTextLinkButtonStyle())
+            }
+        }
+        .planItCard()
     }
 
     private func refreshSignedInUsernameLabel() {

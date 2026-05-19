@@ -12,32 +12,28 @@ struct WelcomeView: View {
     var onMaybeLater: (() -> Void)? = nil
 
     var body: some View {
-        VStack {
+        VStack(spacing: 24) {
             Spacer()
             Text("Welcome, \(globalUsername)! Are you ready to plan your first event?")
                 .multilineTextAlignment(.center)
-                .font(.title)
-                .bold()
-                .padding(.horizontal)
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
-            Button("Let's do it!"){
-               onDoIt?()
+                .padding(.horizontal, 28)
+
+            Button("Let's do it!") {
+                onDoIt?()
             }
-                .buttonStyle(.borderedProminent)
-               .font(.title3)
-             
-            
-            Button(action: {
-                // Use the provided closure to let the parent decide navigation.
-                onMaybeLater?()
-            }) {
+            .buttonStyle(PlanItPrimaryButtonStyle())
+            .padding(.horizontal, 28)
+
+            Button(action: { onMaybeLater?() }) {
                 Text("Maybe later...")
-                    .frame(maxWidth: .infinity)
-                    .foregroundColor(.primary)
-                    .cornerRadius(8)
             }
+            .buttonStyle(PlanItTextLinkButtonStyle())
+
             Spacer()
         }
+        .planItScreen()
     }
 }
 
