@@ -19,6 +19,7 @@ enum PlanItNotifications {
     private static let inviteCreateSubscriptionPrefix = "event-invite-create-"
     private static let inviteUpdateSubscriptionPrefix = "event-invite-update-"
     private static let finalTimeSubscriptionPrefix = "event-final-time-"
+    private static let eventEditedSubscriptionPrefix = "event-edited-"
 
     private static var planItDatabase: CKDatabase {
         CKContainer.default().publicCloudDatabase
@@ -36,6 +37,7 @@ enum PlanItNotifications {
             do {
                 try await ensureEventInviteSubscriptions(usernameLowercased: username)
                 try await ensureFinalTimeSubscription(usernameLowercased: username)
+                try await ensureEventEditedSubscription(usernameLowercased: username)
                 #if DEBUG
                 print("PlanIt: push subscriptions active for @\(username)")
                 #endif
@@ -95,6 +97,19 @@ enum PlanItNotifications {
         _ = try await planItDatabase.save(subscription)
     }
 
+    /// Fires when the organizer saves event edits (see `updateEventInCloudKit`).
+    private static func ensureEventEditedSubscription(usernameLowercased: String) async throws {
+        let alertBody = "An event you're invited to was updated. Tap to view details."
+        let subscription = CKQuerySubscription(
+            recordType: "Event",
+            predicate: NSPredicate(format: "ANY eventEditedNotifiedInvitees == %@", usernameLowercased),
+            subscriptionID: "\(eventEditedSubscriptionPrefix)\(usernameLowercased)",
+            options: [.firesOnRecordUpdate]
+        )
+        subscription.notificationInfo = eventNotificationInfo(alertBody: alertBody)
+        _ = try await planItDatabase.save(subscription)
+    }
+
     private static func eventNotificationInfo(alertBody: String) -> CKSubscription.NotificationInfo {
         let info = CKSubscription.NotificationInfo()
         info.alertBody = alertBody
@@ -140,7 +155,8 @@ enum PlanItNotifications {
         guard let eventId = await eventIdFromEventNotification(queryNotification) else { return nil }
 
         let subscriptionID = queryNotification.subscriptionID ?? ""
-        if subscriptionID.hasPrefix(finalTimeSubscriptionPrefix) {
+        if subscriptionID.hasPrefix(finalTimeSubscriptionPrefix)
+            || subscriptionID.hasPrefix(eventEditedSubscriptionPrefix) {
             return .eventDetails(eventId)
         }
         return .eventResponse(eventId)

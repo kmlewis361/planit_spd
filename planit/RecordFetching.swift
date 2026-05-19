@@ -370,6 +370,16 @@ func newlyInvitedUsernamesLowercased(
         .sorted()
 }
 
+/// Invitees (lowercased) who should receive an “event updated” push — everyone on the event except the organizer and users newly invited on this save.
+func eventEditedNotifiedInviteesLowercased(
+    inviteesLowercased: [String],
+    newlyInvitedLowercased: [String]
+) -> [String] {
+    let newlyInvitedSet = Set(newlyInvitedLowercased)
+    let organizer = inviteesLowercased.first
+    return inviteesLowercased.filter { $0 != organizer && !newlyInvitedSet.contains($0) }
+}
+
 /// Updates an existing CloudKit `Event` record (same `id`; preserves `finalTimeData` on the record).
 func updateEventInCloudKit(
     _ event: Event,
@@ -390,6 +400,11 @@ func updateEventInCloudKit(
     record["invitees"] = inviteesForCloudKit as NSArray
     record["newlyInvited"] = newlyInvited as NSArray
     record["finalTimeNotifiedInvitees"] = [] as NSArray
+    let editedNotified = eventEditedNotifiedInviteesLowercased(
+        inviteesLowercased: inviteesForCloudKit,
+        newlyInvitedLowercased: newlyInvited
+    )
+    record["eventEditedNotifiedInvitees"] = editedNotified as NSArray
     let database = CKContainer.default().publicCloudDatabase
     _ = try await database.save(record)
 }
@@ -404,6 +419,8 @@ func saveFinalTimeToCloudKit(_ finalTime: Time, eventIdString: String) async thr
     record["finalTimeData"] = data as CKRecordValue
     let invitees = stringList(from: record, key: "invitees")
     record["finalTimeNotifiedInvitees"] = invitees as NSArray
+    record["eventEditedNotifiedInvitees"] = [] as NSArray
+    record["newlyInvited"] = [] as NSArray
     let database = CKContainer.default().publicCloudDatabase
     _ = try await database.save(record)
 }
