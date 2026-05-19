@@ -74,6 +74,7 @@ struct HomeView: View {
         .planItScreen()
         .onAppear {
             refreshSignedInUsernameLabel()
+            PlanItNotifications.activateForSignedInUser()
         }
         .task(id: homeEventsRefreshTrigger) {
             refreshSignedInUsernameLabel()

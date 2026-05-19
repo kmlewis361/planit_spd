@@ -117,6 +117,15 @@ struct AppRoot: View {
                 homeEventsRefreshTrigger += 1
             }
         }
+        .onAppear {
+            PlanItNotifications.activateForSignedInUser()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .planitOpenEventResponse)) { notification in
+            guard let idString = notification.object as? String,
+                  let eventId = UUID(uuidString: idString) else { return }
+            path = NavigationPath()
+            path.append(Route.eventResponse(eventId: eventId))
+        }
     }
 }
 

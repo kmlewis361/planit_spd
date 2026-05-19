@@ -127,7 +127,7 @@ struct LoginView: View {
                     Button("Continue") {
                         Task { await saveNewUsername() }
                     }
-                    .buttonStyle(PlanItPrimaryButtonStyle())
+                    .buttonStyle(PlanItSecondaryButtonStyle())
                     .disabled(chosenUsername.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
 
                 case .returning(let username):
@@ -137,6 +137,7 @@ struct LoginView: View {
                         .font(.title2)
                         .fontWeight(.semibold)
                     Button("Continue") {
+                        PlanItNotifications.activateForSignedInUser()
                         onLogin?(false)
                     }
                     .buttonStyle(PlanItPrimaryButtonStyle())
@@ -279,6 +280,7 @@ struct LoginView: View {
             let saved = try await upsertPlanItUser(displayUsername: chosenUsername, ownerRecordName: owner)
             globalUsername = saved
             globalCloudKitOwnerRecordName = owner
+            PlanItNotifications.activateForSignedInUser()
             onLogin?(true)
         } catch PlanItAccountError.cloudKitSchemaMissing {
             phase = .cloudKitBackendMissing
