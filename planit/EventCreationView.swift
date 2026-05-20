@@ -31,6 +31,8 @@ struct EventCreationView: View {
     @State private var inviteSearchTask: Task<Void, Never>?
     @State private var inviteAutocompleteSearching = false
     @State private var inviteAutocompleteShowNoMatches = false
+    /// Lowercased invitee names committed via the suggestion list (styled darker in the field).
+    @State private var autocompleteCommittedInvitees: Set<String> = []
     @State private var proposedTimes: Set<Time> = []
     @State private var lockOuterScrollForTimeGridPaint = false
     @State private var validationPrompt: String?
@@ -376,15 +378,23 @@ struct EventCreationView: View {
 
     private var inviteesAutocompleteSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Invite others (comma-separated)", text: $inviteesString)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.asciiCapable)
-                .textContentType(nil)
-                .planItField()
-                .overlay(requiredFieldOutline(show: highlightRequiredFields && areInviteesMissing))
+            ZStack(alignment: .leading) {
+                Text(inviteesFieldStyledText)
+                    .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(false)
+
+                TextField("Invite others (comma-separated)", text: $inviteesString)
+                    .font(.body)
+                    .foregroundStyle(.clear)
+                    .tint(Color.accentColor)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.asciiCapable)
+                    .textContentType(nil)
+            }
+            .planItField()
+            .overlay(requiredFieldOutline(show: highlightRequiredFields && areInviteesMissing))
 
             if inviteAutocompleteSearching {
                 HStack(spacing: 8) {
@@ -437,9 +447,43 @@ struct EventCreationView: View {
         }
         .onChange(of: inviteesString) { _, newValue in
             inviteAutocompleteShowNoMatches = false
+            pruneAutocompleteCommittedInvitees(matching: newValue)
             syncInviteesFromString()
             scheduleInviteAutocomplete(for: newValue)
         }
+    }
+
+    private var inviteesFieldStyledText: AttributedString {
+        let segments = inviteesString.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        guard !segments.isEmpty else { return AttributedString() }
+
+        var result = AttributedString()
+        for index in segments.indices {
+            if index > 0 {
+                var separator = AttributedString(", ")
+                separator.foregroundColor = manualInviteeTextColor
+                result.append(separator)
+            }
+
+            let segment = segments[index]
+            var part = AttributedString(segment)
+            let normalized = normalizedPlanItUsername(segment).lowercased()
+            let isTypingFragment = index == segments.count - 1
+            let isAutocomplete = !isTypingFragment
+                && !normalized.isEmpty
+                && autocompleteCommittedInvitees.contains(normalized)
+            part.foregroundColor = isAutocomplete ? autocompleteInviteeTextColor : manualInviteeTextColor
+            result.append(part)
+        }
+        return result
+    }
+
+    private var autocompleteInviteeTextColor: Color { .primary }
+    private var manualInviteeTextColor: Color { .primary.opacity(0.42) }
+
+    private func pruneAutocompleteCommittedInvitees(matching fullText: String) {
+        let stillCommitted = committedInviteeSet(from: fullText)
+        autocompleteCommittedInvitees = autocompleteCommittedInvitees.intersection(stillCommitted)
     }
 
     #if DEBUG
@@ -573,6 +617,7 @@ struct EventCreationView: View {
             chunks[chunks.count - 1] = trimmedPick
         }
         inviteesString = chunks.joined(separator: ", ") + ", "
+        autocompleteCommittedInvitees.insert(trimmedPick.lowercased())
         inviteSuggestions = []
         syncInviteesFromString()
     }
