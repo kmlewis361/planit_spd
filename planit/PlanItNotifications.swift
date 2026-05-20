@@ -1,7 +1,5 @@
-//
 //  PlanItNotifications.swift
 //  planit
-//
 
 import CloudKit
 import Foundation
